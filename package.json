@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "type": "module",
   "bin": {
-    "of": "./dist/index.js"
+    "of": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -22,7 +22,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/stephendolan/omnifocus-cli.git"
+    "url": "git+https://github.com/stephendolan/omnifocus-cli.git"
   },
   "homepage": "https://github.com/stephendolan/omnifocus-cli#readme",
   "bugs": {
