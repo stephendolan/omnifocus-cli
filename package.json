@@ -1,5 +1,5 @@
 {
-  "name": "omnifocus-cli",
+  "name": "@stephendolan/omnifocus-cli",
   "version": "1.0.0",
   "description": "A command-line interface for OmniFocus on macOS",
   "main": "dist/index.js",
