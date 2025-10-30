@@ -10,15 +10,21 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "link": "npm run build && npm link"
   },
   "keywords": [
     "omnifocus",
     "cli",
     "productivity",
-    "gtd"
+    "gtd",
+    "task-management",
+    "command-line",
+    "macos",
+    "jxa"
   ],
-  "author": "Stephen Dolan <stephen@stephendolan.com>",
+  "author": "Stephen Dolan <https://github.com/stephendolan>",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -27,6 +33,14 @@
   "homepage": "https://github.com/stephendolan/omnifocus-cli#readme",
   "bugs": {
     "url": "https://github.com/stephendolan/omnifocus-cli/issues"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "commander": "^12.1.0",

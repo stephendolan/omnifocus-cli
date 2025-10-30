@@ -1,5 +1,11 @@
 # OmniFocus CLI
 
+[![npm version](https://img.shields.io/npm/v/@stephendolan/omnifocus-cli.svg)](https://www.npmjs.com/package/@stephendolan/omnifocus-cli)
+[![npm downloads](https://img.shields.io/npm/dm/@stephendolan/omnifocus-cli.svg)](https://www.npmjs.com/package/@stephendolan/omnifocus-cli)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js Version](https://img.shields.io/node/v/@stephendolan/omnifocus-cli.svg)](https://nodejs.org)
+[![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://www.apple.com/macos/)
+
 A powerful command-line interface for OmniFocus on macOS, inspired by the GitHub CLI (`gh`).
 
 ## Features
@@ -14,9 +20,20 @@ A powerful command-line interface for OmniFocus on macOS, inspired by the GitHub
 ## Installation
 
 ```bash
+# Install globally
+npm install -g @stephendolan/omnifocus-cli
+
+# Or run directly without installing
+npx @stephendolan/omnifocus-cli task list
+```
+
+### From Source
+
+```bash
+git clone https://github.com/stephendolan/omnifocus-cli.git
+cd omnifocus-cli
 npm install
-npm run build
-npm link
+npm run link  # Build and link globally
 ```
 
 Now you can use the `of` command anywhere in your terminal.
