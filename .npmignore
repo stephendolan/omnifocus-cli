@@ -1,0 +1,16 @@
+# Source files (dist/ is what gets used)
+src/
+tsconfig.json
+
+# Development files
+.claude/
+CLAUDE.md
+EXAMPLES.md
+*.log
+
+# OS files
+.DS_Store
+
+# Git
+.git
+.gitignore
