@@ -13,6 +13,7 @@ A powerful command-line interface for OmniFocus on macOS, inspired by the GitHub
 - 📝 **Task Management** - Create, list, update, and delete tasks
 - 📂 **Project Management** - Manage projects and their organization
 - 📥 **Inbox Management** - View and count inbox items
+- 🏷️ **Tag Analysis** - View tag usage statistics and identify stale tags
 - 🔍 **Search** - Full-text search across tasks
 - 🎨 **Beautiful Output** - Color-coded, formatted output with icons
 - ⚡ **Fast** - Direct OmniFocus integration using JXA
@@ -185,6 +186,102 @@ of search "documentation"
 of search "meeting" -v
 ```
 
+### Tag Commands
+
+#### List Tags
+
+```bash
+# List all tags with usage counts
+of tag list
+
+# Show tags unused for 30+ days
+of tag list --unused-days 30
+
+# Sort by usage (most used first)
+of tag list --sort usage
+
+# Sort by activity (most recent first)
+of tag list --sort activity
+
+# Only count active (incomplete) tasks
+of tag list --active-only
+
+# Show verbose details (IDs, creation/modification dates)
+of tag list -v
+```
+
+#### Tag Statistics
+
+```bash
+# Show comprehensive tag usage statistics
+of tag stats
+```
+
+The `tag stats` command displays:
+- Total tag counts (total, active, with tasks, unused)
+- Average tasks per tag
+- Most used tags (top 5)
+- Least used tags (bottom 5)
+- Stale tags (no activity in 30+ days)
+
+#### Create Tag
+
+```bash
+# Create a new tag
+of tag create "New Tag"
+
+# Create a nested tag (child of existing tag)
+of tag create "Child Tag" --parent "Parent Tag"
+```
+
+#### View Tag
+
+```bash
+# View tag details by name
+of tag view "Tag Name"
+
+# View tag by ID (always unique)
+of tag view "kXu3B-LZfFH"
+
+# View nested tag using path syntax
+of tag view "Parent/Child"
+```
+
+**Note:** If multiple tags share the same name in different hierarchies (e.g., "Work/Meetings" and "Personal/Meetings"), you must use either:
+- The full hierarchical path: `of tag view "Work/Meetings"`
+- The tag ID: `of tag view "kXu3B-LZfFH"`
+
+The command will show an error with available paths and IDs if the name is ambiguous.
+
+#### Update Tag
+
+```bash
+# Rename a tag
+of tag update "Old Name" --name "New Name"
+
+# Deactivate a tag
+of tag update "Tag Name" --inactive
+
+# Reactivate a tag
+of tag update "Tag Name" --active
+
+# Update nested tag using path
+of tag update "Parent/Child" --name "New Name"
+```
+
+#### Delete Tag
+
+```bash
+# Delete a tag by name
+of tag delete "Tag Name"
+
+# Delete using alias
+of tag rm "Tag Name"
+
+# Delete nested tag using path
+of tag delete "Parent/Child"
+```
+
 ## Command Reference
 
 ### Global Options
@@ -218,6 +315,20 @@ of search "meeting" -v
 - `--sequential` - Make it a sequential project
 - `--status <status>` - Set status (active, on hold, dropped)
 
+### Tag Options
+
+**List options:**
+- `-u, --unused-days <days>` - Show tags unused for N days
+- `-s, --sort <field>` - Sort by: name, usage, activity (default: name)
+- `-a, --active-only` - Only count active (incomplete) tasks
+- `-v, --verbose` - Show detailed information (IDs, dates)
+
+**Create/Update options:**
+- `-p, --parent <name>` - Create as child of parent tag (create only)
+- `-n, --name <name>` - Rename tag (update only)
+- `-a, --active` - Set tag as active (update only)
+- `-i, --inactive` - Set tag as inactive (update only)
+
 ## Output Legend
 
 ### Task List
@@ -238,6 +349,13 @@ of search "meeting" -v
 - `[sequential]` - Sequential project indicator (blue)
 - `[Folder]` - Folder name (cyan)
 - `#tag` - Tags (magenta)
+
+### Tag List
+
+- `#tag` - Tag name (cyan if active, gray if inactive)
+- `(X/Y)` - Remaining/Total tasks
+- `active X ago` - Last activity timestamp (cyan)
+- `never used` - Tag has no tasks (gray)
 
 ## Examples
 
@@ -286,6 +404,44 @@ of task update "Draft quarterly report" --complete
 
 # Reschedule a task
 of task update "Team meeting prep" --due "2024-01-22"
+```
+
+### Tag Management
+
+```bash
+# View all tags with usage stats
+of tag list
+
+# Find stale tags not used in 60+ days
+of tag list --unused-days 60
+
+# See most used tags
+of tag list --sort usage
+
+# View recently active tags
+of tag list --sort activity
+
+# Get comprehensive tag statistics
+of tag stats
+
+# Create a new tag
+of tag create "Urgent"
+
+# Create nested tags for organization
+of tag create "Work Meetings" --parent "Work"
+of tag create "Personal Meetings" --parent "Personal"
+
+# View a specific tag (with hierarchical path if needed)
+of tag view "Work/Work Meetings"
+
+# Rename a stale tag
+of tag update "Old Project" --name "Archived Project"
+
+# Deactivate unused tags
+of tag update "Archived Project" --inactive
+
+# Delete completely unused tags
+of tag delete "Obsolete Tag"
 ```
 
 ## Requirements

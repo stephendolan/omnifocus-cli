@@ -11,7 +11,15 @@ import type {
   CreateTaskOptions,
   UpdateTaskOptions,
   CreateProjectOptions,
+  UpdateProjectOptions,
   Perspective,
+  Tag,
+  TagListOptions,
+  TagStats,
+  TaskStats,
+  ProjectStats,
+  CreateTagOptions,
+  UpdateTagOptions,
 } from '../types.js';
 
 const execFileAsync = promisify(execFile);
@@ -80,6 +88,46 @@ export class OmniFocus {
       throw new Error("Project not found: " + idOrName);
     }
 
+    function getTagPath(tag) {
+      const parts = [tag.name];
+      let current = tag.parent;
+      while (current) {
+        parts.unshift(current.name);
+        current = current.parent;
+      }
+      return parts.join('/');
+    }
+
+    function findTag(idOrName) {
+      for (const tag of flattenedTags) {
+        if (tag.id.primaryKey === idOrName) {
+          return tag;
+        }
+      }
+
+      if (idOrName.includes('/')) {
+        for (const tag of flattenedTags) {
+          if (getTagPath(tag) === idOrName) {
+            return tag;
+          }
+        }
+        throw new Error("Tag not found: " + idOrName);
+      }
+
+      const matches = flattenedTags.filter(tag => tag.name === idOrName);
+
+      if (matches.length === 0) {
+        throw new Error("Tag not found: " + idOrName);
+      }
+
+      if (matches.length > 1) {
+        const paths = matches.map(getTagPath);
+        throw new Error("Multiple tags found with name '" + idOrName + "'. Please use full path:\\n  " + paths.join('\\n  ') + "\\nOr use tag ID: " + matches.map(t => t.id.primaryKey).join(', '));
+      }
+
+      return matches[0];
+    }
+
     function findByName(collection, name, typeName) {
       for (const item of collection) {
         if (item.name === name) {
@@ -91,7 +139,7 @@ export class OmniFocus {
 
     function assignTags(target, tagNames) {
       for (const tagName of tagNames) {
-        const tag = findByName(flattenedTags, tagName, "Tag");
+        const tag = findTag(tagName);
         target.addTag(tag);
       }
     }
@@ -101,16 +149,68 @@ export class OmniFocus {
       assignTags(target, tagNames);
     }
 
-    function projectStatusToString(status) {
-      if (status === Project.Status.Active) return 'active';
-      if (status === Project.Status.OnHold) return 'on hold';
+    function statusToString(status, StatusEnum) {
+      if (status === StatusEnum.Active) return 'active';
+      if (status === StatusEnum.OnHold) return 'on hold';
       return 'dropped';
     }
 
-    function stringToProjectStatus(str) {
-      if (str === 'active') return Project.Status.Active;
-      if (str === 'on hold') return Project.Status.OnHold;
-      return Project.Status.Dropped;
+    function stringToStatus(str, StatusEnum) {
+      if (str === 'active') return StatusEnum.Active;
+      if (str === 'on hold') return StatusEnum.OnHold;
+      return StatusEnum.Dropped;
+    }
+
+    const projectStatusToString = (status) => statusToString(status, Project.Status);
+    const tagStatusToString = (status) => statusToString(status, Tag.Status);
+    const stringToProjectStatus = (str) => stringToStatus(str, Project.Status);
+    const stringToTagStatus = (str) => stringToStatus(str, Tag.Status);
+
+    function computeTopItems(items, keyFn, topN = 5) {
+      return items
+        .sort((a, b) => b[keyFn] - a[keyFn])
+        .slice(0, topN)
+        .map(item => ({ name: item.name, [keyFn]: item[keyFn] }));
+    }
+
+    function computeAverage(total, count) {
+      return count > 0 ? Math.round((total / count) * 10) / 10 : 0;
+    }
+
+    function serializeTag(tag, activeOnly = false) {
+      const tasks = tag.tasks;
+      const remainingTasks = tag.remainingTasks;
+      const includedTasks = activeOnly ? remainingTasks : tasks;
+
+      const dates = [];
+      if (tag.added) dates.push(tag.added);
+      if (tag.modified) dates.push(tag.modified);
+
+      for (const task of includedTasks) {
+        if (task.added) dates.push(task.added);
+        if (task.modified) dates.push(task.modified);
+        if (!activeOnly && task.completionDate) dates.push(task.completionDate);
+        if (!activeOnly && task.effectiveCompletionDate) dates.push(task.effectiveCompletionDate);
+      }
+
+      const lastActivity = dates.length > 0
+        ? dates.reduce((latest, current) => current > latest ? current : latest)
+        : null;
+
+      return {
+        id: tag.id.primaryKey,
+        name: tag.name,
+        taskCount: includedTasks.length,
+        remainingTaskCount: remainingTasks.length,
+        added: tag.added ? tag.added.toISOString() : null,
+        modified: tag.modified ? tag.modified.toISOString() : null,
+        lastActivity: lastActivity ? lastActivity.toISOString() : null,
+        active: tag.active,
+        status: tagStatusToString(tag.status),
+        parent: tag.parent ? tag.parent.name : null,
+        children: tag.children.map(c => c.name),
+        allowsNextAction: tag.allowsNextAction
+      };
     }
   `;
 
@@ -255,6 +355,47 @@ export class OmniFocus {
     return updates.join('\n    ');
   }
 
+  private buildTagUpdates(options: UpdateTagOptions): string {
+    const updates: string[] = [];
+
+    if (options.name !== undefined) {
+      updates.push(`tag.name = "${this.escapeString(options.name)}";`);
+    }
+    if (options.status !== undefined) {
+      updates.push(`tag.status = stringToTagStatus("${options.status}");`);
+    }
+
+    return updates.join('\n    ');
+  }
+
+  private buildProjectUpdates(options: UpdateProjectOptions): string {
+    const updates: string[] = [];
+
+    if (options.name !== undefined) {
+      updates.push(`project.name = "${this.escapeString(options.name)}";`);
+    }
+    if (options.note !== undefined) {
+      updates.push(`project.note = "${this.escapeString(options.note)}";`);
+    }
+    if (options.sequential !== undefined) {
+      updates.push(`project.sequential = ${options.sequential};`);
+    }
+    if (options.status !== undefined) {
+      updates.push(`project.status = stringToProjectStatus("${options.status}");`);
+    }
+    if (options.folder !== undefined && options.folder) {
+      updates.push(`
+        const targetFolder = findByName(flattenedFolders, "${this.escapeString(options.folder)}", "Folder");
+        moveProjects([project], targetFolder);
+      `);
+    }
+    if (options.tags !== undefined) {
+      updates.push(`replaceTagsOn(project, ${JSON.stringify(options.tags)});`);
+    }
+
+    return updates.join('\n    ');
+  }
+
   async listTasks(filters: TaskFilters = {}): Promise<Task[]> {
     const omniScript = `
       ${this.OMNI_HELPERS}
@@ -354,6 +495,20 @@ export class OmniFocus {
         ${options.status ? `project.status = stringToProjectStatus("${options.status}");` : ''}
         ${options.tags && options.tags.length > 0 ? `assignTags(project, ${JSON.stringify(options.tags)});` : ''}
 
+        return JSON.stringify(serializeProject(project));
+      })();
+    `;
+
+    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
+    return JSON.parse(output);
+  }
+
+  async updateProject(idOrName: string, options: UpdateProjectOptions): Promise<Project> {
+    const omniScript = `
+      ${this.OMNI_HELPERS}
+      (() => {
+        const project = findProject("${this.escapeString(idOrName)}");
+        ${this.buildProjectUpdates(options)}
         return JSON.stringify(serializeProject(project));
       })();
     `;
@@ -512,6 +667,289 @@ export class OmniFocus {
     `;
 
     const output = await this.executeJXA(this.wrapOmniScript(omniScript), 60000);
+    return JSON.parse(output);
+  }
+
+  async listTags(options: TagListOptions = {}): Promise<Tag[]> {
+    const omniScript = `
+      ${this.OMNI_HELPERS}
+      (() => {
+        const results = [];
+        const now = new Date();
+        const activeOnly = ${!!options.activeOnly};
+
+        for (const tag of flattenedTags) {
+          const serialized = serializeTag(tag, activeOnly);
+          results.push(serialized);
+        }
+
+        ${options.unusedDays ? `
+          const cutoffDate = new Date(now.getTime() - (${options.unusedDays} * 24 * 60 * 60 * 1000));
+          const filtered = results.filter(tag => {
+            if (!tag.lastActivity) return true;
+            return new Date(tag.lastActivity) < cutoffDate;
+          });
+          return JSON.stringify(filtered);
+        ` : 'return JSON.stringify(results);'}
+      })();
+    `;
+
+    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
+    const tags = JSON.parse(output);
+
+    return this.sortTags(tags, options.sortBy);
+  }
+
+  private sortTags(tags: Tag[], sortBy: string = 'name'): Tag[] {
+    const sortFns: Record<string, (a: Tag, b: Tag) => number> = {
+      usage: (a, b) => b.taskCount - a.taskCount,
+      activity: (a, b) => {
+        if (!a.lastActivity && !b.lastActivity) return 0;
+        if (!a.lastActivity) return 1;
+        if (!b.lastActivity) return -1;
+        return new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime();
+      },
+      name: (a, b) => a.name.localeCompare(b.name)
+    };
+
+    return tags.sort(sortFns[sortBy] || sortFns.name);
+  }
+
+  async getTagStats(): Promise<TagStats> {
+    const omniScript = `
+      ${this.OMNI_HELPERS}
+      (() => {
+        const allTags = [];
+        for (const tag of flattenedTags) {
+          allTags.push(serializeTag(tag));
+        }
+
+        const activeTags = allTags.filter(t => t.active);
+        const tagsWithTasks = allTags.filter(t => t.taskCount > 0);
+        const unusedTags = allTags.filter(t => t.taskCount === 0);
+
+        const totalTasks = tagsWithTasks.reduce((sum, t) => sum + t.taskCount, 0);
+        const avgTasksPerTag = computeAverage(totalTasks, tagsWithTasks.length);
+
+        const mostUsedTags = computeTopItems(allTags, 'taskCount');
+        const leastUsedTags = computeTopItems(
+          tagsWithTasks.map(t => ({ ...t, taskCount: -t.taskCount })),
+          'taskCount'
+        ).map(t => ({ name: t.name, taskCount: -t.taskCount }));
+
+        const now = new Date();
+        const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
+        const staleTags = allTags
+          .filter(t => t.lastActivity && new Date(t.lastActivity) < thirtyDaysAgo)
+          .map(t => ({
+            name: t.name,
+            daysSinceActivity: Math.floor((now - new Date(t.lastActivity)) / (24 * 60 * 60 * 1000))
+          }))
+          .sort((a, b) => b.daysSinceActivity - a.daysSinceActivity);
+
+        return JSON.stringify({
+          totalTags: allTags.length,
+          activeTags: activeTags.length,
+          tagsWithTasks: tagsWithTasks.length,
+          unusedTags: unusedTags.length,
+          avgTasksPerTag,
+          mostUsedTags,
+          leastUsedTags,
+          staleTags
+        });
+      })();
+    `;
+
+    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
+    return JSON.parse(output);
+  }
+
+  async createTag(options: CreateTagOptions): Promise<Tag> {
+    const omniScript = `
+      ${this.OMNI_HELPERS}
+      (() => {
+        ${options.parent
+          ? `const parentTag = findTag("${this.escapeString(options.parent)}");
+             const tag = new Tag("${this.escapeString(options.name)}", parentTag);`
+          : `const tag = new Tag("${this.escapeString(options.name)}", tags.beginning);`
+        }
+
+        ${options.status ? `tag.status = stringToTagStatus("${options.status}");` : ''}
+
+        return JSON.stringify(serializeTag(tag));
+      })();
+    `;
+
+    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
+    return JSON.parse(output);
+  }
+
+  async getTag(idOrName: string): Promise<Tag> {
+    const omniScript = `
+      ${this.OMNI_HELPERS}
+      (() => {
+        const tag = findTag("${this.escapeString(idOrName)}");
+        return JSON.stringify(serializeTag(tag));
+      })();
+    `;
+
+    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
+    return JSON.parse(output);
+  }
+
+  async updateTag(idOrName: string, options: UpdateTagOptions): Promise<Tag> {
+    const omniScript = `
+      ${this.OMNI_HELPERS}
+      (() => {
+        const tag = findTag("${this.escapeString(idOrName)}");
+        ${this.buildTagUpdates(options)}
+        return JSON.stringify(serializeTag(tag));
+      })();
+    `;
+
+    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
+    return JSON.parse(output);
+  }
+
+  async deleteTag(idOrName: string): Promise<void> {
+    const omniScript = `
+      ${this.OMNI_HELPERS}
+      (() => {
+        deleteObject(findTag("${this.escapeString(idOrName)}"));
+      })();
+    `;
+
+    await this.executeJXA(this.wrapOmniScript(omniScript));
+  }
+
+  async getTaskStats(): Promise<TaskStats> {
+    const omniScript = `
+      ${this.OMNI_HELPERS}
+      (() => {
+        const allTasks = Array.from(flattenedTasks);
+        const now = new Date();
+
+        const activeTasks = allTasks.filter(t => !t.completed && !t.dropped);
+        const completedTasks = allTasks.filter(t => t.completed);
+        const flaggedTasks = activeTasks.filter(t => t.flagged);
+        const overdueActiveTasks = activeTasks.filter(t => t.dueDate && t.dueDate < now);
+
+        const tasksWithEstimates = allTasks.filter(t => t.estimatedMinutes && t.estimatedMinutes > 0);
+        const totalEstimatedMinutes = tasksWithEstimates.reduce((sum, t) => sum + (t.estimatedMinutes || 0), 0);
+        const avgEstimatedMinutes = tasksWithEstimates.length > 0
+          ? Math.round(totalEstimatedMinutes / tasksWithEstimates.length)
+          : null;
+
+        const totalNonDropped = allTasks.filter(t => !t.dropped).length;
+        const completionRate = totalNonDropped > 0
+          ? Math.round((completedTasks.length / totalNonDropped) * 100)
+          : 0;
+
+        const projectCounts = {};
+        for (const task of allTasks) {
+          if (task.dropped) continue;
+          const projectName = task.containingProject ? task.containingProject.name : 'Inbox';
+          projectCounts[projectName] = (projectCounts[projectName] || 0) + 1;
+        }
+        const tasksByProject = computeTopItems(
+          Object.entries(projectCounts).map(([name, count]) => ({ name, taskCount: count })),
+          'taskCount'
+        );
+
+        const tagCounts = {};
+        for (const task of allTasks) {
+          if (task.dropped) continue;
+          for (const tag of task.tags) {
+            tagCounts[tag.name] = (tagCounts[tag.name] || 0) + 1;
+          }
+        }
+        const tasksByTag = computeTopItems(
+          Object.entries(tagCounts).map(([name, count]) => ({ name, taskCount: count })),
+          'taskCount'
+        );
+
+        return JSON.stringify({
+          totalTasks: allTasks.length,
+          activeTasks: activeTasks.length,
+          completedTasks: completedTasks.length,
+          flaggedTasks: flaggedTasks.length,
+          overdueActiveTasks: overdueActiveTasks.length,
+          avgEstimatedMinutes,
+          tasksWithEstimates: tasksWithEstimates.length,
+          completionRate,
+          tasksByProject,
+          tasksByTag
+        });
+      })();
+    `;
+
+    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
+    return JSON.parse(output);
+  }
+
+  async getProjectStats(): Promise<ProjectStats> {
+    const omniScript = `
+      ${this.OMNI_HELPERS}
+      (() => {
+        const allProjects = Array.from(flattenedProjects);
+
+        const activeProjects = allProjects.filter(p => p.status === Project.Status.Active);
+        const onHoldProjects = allProjects.filter(p => p.status === Project.Status.OnHold);
+        const droppedProjects = allProjects.filter(p => p.status === Project.Status.Dropped);
+        const sequentialProjects = allProjects.filter(p => p.sequential);
+        const parallelProjects = allProjects.filter(p => !p.sequential);
+
+        const nonDroppedProjects = allProjects.filter(p => p.status !== Project.Status.Dropped);
+
+        const totalTasks = nonDroppedProjects.reduce((sum, p) => sum + p.flattenedTasks.length, 0);
+        const totalRemaining = nonDroppedProjects.reduce((sum, p) => {
+          return sum + p.flattenedTasks.filter(t => !t.completed).length;
+        }, 0);
+
+        const avgTasksPerProject = computeAverage(totalTasks, nonDroppedProjects.length);
+        const avgRemainingPerProject = computeAverage(totalRemaining, nonDroppedProjects.length);
+
+        const completionRates = nonDroppedProjects
+          .filter(p => p.flattenedTasks.length > 0)
+          .map(p => {
+            const total = p.flattenedTasks.length;
+            const completed = p.flattenedTasks.filter(t => t.completed).length;
+            return (completed / total) * 100;
+          });
+
+        const avgCompletionRate = completionRates.length > 0
+          ? Math.round(completionRates.reduce((sum, rate) => sum + rate, 0) / completionRates.length)
+          : 0;
+
+        const projectsWithMostTasks = computeTopItems(
+          nonDroppedProjects.map(p => ({ name: p.name, taskCount: p.flattenedTasks.length })),
+          'taskCount'
+        );
+
+        const projectsWithMostRemaining = computeTopItems(
+          nonDroppedProjects
+            .map(p => ({ name: p.name, remainingCount: p.flattenedTasks.filter(t => !t.completed).length }))
+            .filter(p => p.remainingCount > 0),
+          'remainingCount'
+        );
+
+        return JSON.stringify({
+          totalProjects: allProjects.length,
+          activeProjects: activeProjects.length,
+          onHoldProjects: onHoldProjects.length,
+          droppedProjects: droppedProjects.length,
+          sequentialProjects: sequentialProjects.length,
+          parallelProjects: parallelProjects.length,
+          avgTasksPerProject,
+          avgRemainingPerProject,
+          avgCompletionRate,
+          projectsWithMostTasks,
+          projectsWithMostRemaining
+        });
+      })();
+    `;
+
+    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
     return JSON.parse(output);
   }
 }

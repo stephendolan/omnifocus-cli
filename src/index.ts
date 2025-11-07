@@ -6,6 +6,7 @@ import { createProjectCommand } from './commands/project.js';
 import { createInboxCommand } from './commands/inbox.js';
 import { createSearchCommand } from './commands/search.js';
 import { createPerspectiveCommand } from './commands/perspective.js';
+import { createTagCommand } from './commands/tag.js';
 
 const program = new Command();
 
@@ -19,5 +20,6 @@ program.addCommand(createProjectCommand());
 program.addCommand(createInboxCommand());
 program.addCommand(createSearchCommand());
 program.addCommand(createPerspectiveCommand());
+program.addCommand(createTagCommand());
 
 program.parse();

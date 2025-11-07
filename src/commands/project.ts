@@ -1,7 +1,7 @@
 import { Command } from 'commander';
-import { displayProjectList, displayProjectDetails, displayWithSuccessMessage, displaySuccessMessage } from '../lib/display.js';
+import { displayProjectList, displayProjectDetails, displayWithSuccessMessage, displaySuccessMessage, displayProjectStats } from '../lib/display.js';
 import { executeOmniFocusCommand } from '../lib/command-utils.js';
-import type { ProjectFilters } from '../types.js';
+import type { ProjectFilters, UpdateProjectOptions } from '../types.js';
 
 export function createProjectCommand(): Command {
   const command = new Command('project');
@@ -57,6 +57,37 @@ export function createProjectCommand(): Command {
     });
 
   command
+    .command('update <idOrName>')
+    .description('Update an existing project')
+    .option('-n, --name <name>', 'Rename project')
+    .option('--note <text>', 'New note')
+    .option('-f, --folder <name>', 'Move to folder')
+    .option('-t, --tag <tags...>', 'Replace tags')
+    .option('-s, --sequential', 'Make it sequential')
+    .option('-p, --parallel', 'Make it parallel')
+    .option('--status <status>', 'Set status (active, on hold, dropped)')
+    .action(async (idOrName, options) => {
+      await executeOmniFocusCommand(
+        'Updating project...',
+        (of) => {
+          const updates: UpdateProjectOptions = {
+            ...(options.name && { name: options.name }),
+            ...(options.note !== undefined && { note: options.note }),
+            ...(options.folder && { folder: options.folder }),
+            ...(options.tag && { tags: options.tag }),
+            ...(options.sequential && { sequential: true }),
+            ...(options.parallel && { sequential: false }),
+            ...(options.status && { status: options.status }),
+          };
+
+          return of.updateProject(idOrName, updates);
+        },
+        (project) => displayWithSuccessMessage('Project updated successfully', project, displayProjectDetails),
+        'Failed to update project'
+      );
+    });
+
+  command
     .command('delete <idOrName>')
     .alias('rm')
     .description('Delete a project')
@@ -78,6 +109,18 @@ export function createProjectCommand(): Command {
         (of) => of.getProject(idOrName),
         (project) => displayProjectDetails(project),
         'Failed to load project'
+      );
+    });
+
+  command
+    .command('stats')
+    .description('Show project statistics')
+    .action(async () => {
+      await executeOmniFocusCommand(
+        'Analyzing projects...',
+        (of) => of.getProjectStats(),
+        (stats) => displayProjectStats(stats),
+        'Failed to analyze projects'
       );
     });
 

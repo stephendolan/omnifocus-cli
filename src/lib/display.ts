@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { format, formatDistanceToNow } from 'date-fns';
-import type { Task, Project, Perspective } from '../types.js';
+import type { Task, Project, Perspective, Tag, TagStats, TaskStats, ProjectStats } from '../types.js';
 
 const PROJECT_STATUS_COLORS = {
   'active': chalk.green,
@@ -12,7 +12,7 @@ export function displaySuccessMessage(message: string): void {
   console.log(chalk.green(`✓ ${message}`));
 }
 
-export function displayWithSuccessMessage<T extends Task | Project>(
+export function displayWithSuccessMessage<T extends Task | Project | Tag>(
   message: string,
   entity: T,
   displayFn: (entity: T) => void
@@ -50,6 +50,21 @@ function formatTags(tags: string[], separator: string = ' '): string {
 
 export function pluralize(count: number, singular: string, plural = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function displayMetric(label: string, value: string | number, valueColor?: typeof chalk): void {
+  const formattedValue = valueColor ? valueColor(value.toString()) : value.toString();
+  console.log(chalk.gray(label.padEnd(25)) + formattedValue);
+}
+
+function displayTopList(title: string, items: Array<{ name: string; [key: string]: any }>, countKey: string, color: typeof chalk = chalk.cyan): void {
+  if (items.length === 0) return;
+
+  console.log();
+  console.log(chalk.bold(title));
+  items.forEach(item => {
+    console.log(`  ${color(item.name)} ${chalk.gray(`(${item[countKey]} ${countKey})`)}`);
+  });
 }
 
 function displayList<T>(
@@ -216,6 +231,147 @@ export function displayProjectDetails(project: Project): void {
     console.log();
     console.log(chalk.bold('Note:'));
     console.log(project.note);
+  }
+
+  console.log();
+}
+
+export function displayTag(tag: Tag, verbose = false): void {
+  const parts: string[] = [];
+
+  parts.push(tag.active ? chalk.green('●') : chalk.gray('○'));
+  parts.push(chalk.bold(tag.name));
+  parts.push(chalk.gray(`(${tag.taskCount} tasks, ${tag.remainingTaskCount} remaining)`));
+
+  if (tag.lastActivity) {
+    const activityDate = new Date(tag.lastActivity);
+    const dateStr = formatDistanceToNow(activityDate, { addSuffix: true });
+    parts.push(chalk.cyan(`active ${dateStr}`));
+  } else {
+    parts.push(chalk.gray('never used'));
+  }
+
+  console.log(parts.join(' '));
+
+  if (verbose) {
+    console.log(chalk.gray(`  ID: ${tag.id}`));
+    if (tag.added) {
+      console.log(chalk.gray(`  Created: ${format(new Date(tag.added), 'PPP')}`));
+    }
+    if (tag.modified) {
+      console.log(chalk.gray(`  Modified: ${format(new Date(tag.modified), 'PPP')}`));
+    }
+  }
+}
+
+export function displayTagList(tags: Tag[], verbose = false): void {
+  displayList(tags, 'tag', displayTag, verbose);
+}
+
+export function displayTagStats(stats: TagStats): void {
+  console.log();
+  console.log(chalk.bold.underline('Tag Usage Statistics'));
+  console.log();
+
+  displayMetric('Total Tags:', stats.totalTags, chalk.bold);
+  displayMetric('Active Tags:', stats.activeTags, chalk.green);
+  displayMetric('Tags with Tasks:', stats.tagsWithTasks, chalk.cyan);
+  displayMetric('Unused Tags:', stats.unusedTags, chalk.yellow);
+  displayMetric('Avg Tasks per Tag:', stats.avgTasksPerTag.toFixed(1));
+
+  displayTopList('Most Used Tags:', stats.mostUsedTags, 'taskCount', chalk.cyan);
+  displayTopList('Least Used Tags:', stats.leastUsedTags, 'taskCount', chalk.magenta);
+
+  if (stats.staleTags.length > 0) {
+    console.log();
+    console.log(chalk.bold('Stale Tags (no activity in 30+ days):'));
+    stats.staleTags.slice(0, 10).forEach(t => {
+      console.log(`  ${chalk.red(t.name)} ${chalk.gray(`(${t.daysSinceActivity} days)`)}`);
+    });
+    if (stats.staleTags.length > 10) {
+      console.log(chalk.gray(`  ... and ${stats.staleTags.length - 10} more`));
+    }
+  }
+
+  console.log();
+}
+
+export function displayTaskStats(stats: TaskStats): void {
+  console.log();
+  console.log(chalk.bold.underline('Task Statistics'));
+  console.log();
+
+  displayMetric('Total Tasks:', stats.totalTasks, chalk.bold);
+  displayMetric('Active Tasks:', stats.activeTasks, chalk.yellow);
+  displayMetric('Completed Tasks:', stats.completedTasks, chalk.green);
+  displayMetric('Flagged Tasks:', stats.flaggedTasks, chalk.cyan);
+  displayMetric('Overdue Tasks:', stats.overdueActiveTasks, chalk.red);
+  displayMetric('Completion Rate:', `${stats.completionRate}%`);
+
+  if (stats.avgEstimatedMinutes !== null) {
+    displayMetric('Avg Estimate:', `${formatEstimate(stats.avgEstimatedMinutes)} (${stats.tasksWithEstimates} tasks)`);
+  }
+
+  displayTopList('Top Projects by Task Count:', stats.tasksByProject, 'taskCount', chalk.cyan);
+  displayTopList('Top Tags by Task Count:', stats.tasksByTag, 'taskCount', chalk.magenta);
+
+  console.log();
+}
+
+export function displayProjectStats(stats: ProjectStats): void {
+  console.log();
+  console.log(chalk.bold.underline('Project Statistics'));
+  console.log();
+
+  displayMetric('Total Projects:', stats.totalProjects, chalk.bold);
+  displayMetric('Active Projects:', stats.activeProjects, chalk.green);
+  displayMetric('On Hold Projects:', stats.onHoldProjects, chalk.yellow);
+  displayMetric('Dropped Projects:', stats.droppedProjects, chalk.red);
+  displayMetric('Sequential Projects:', stats.sequentialProjects, chalk.blue);
+  displayMetric('Parallel Projects:', stats.parallelProjects);
+  displayMetric('Avg Tasks per Project:', stats.avgTasksPerProject.toFixed(1));
+  displayMetric('Avg Remaining per Proj:', stats.avgRemainingPerProject.toFixed(1));
+  displayMetric('Avg Completion Rate:', `${stats.avgCompletionRate}%`);
+
+  displayTopList('Projects with Most Tasks:', stats.projectsWithMostTasks, 'taskCount', chalk.cyan);
+  displayTopList('Projects with Most Remaining Work:', stats.projectsWithMostRemaining, 'remainingCount', chalk.yellow);
+
+  console.log();
+}
+
+export function displayTagDetails(tag: Tag): void {
+  console.log();
+  console.log(chalk.bold.underline(tag.name));
+  console.log();
+
+  const statusColor = tag.status === 'active' ? chalk.green :
+                     tag.status === 'on hold' ? chalk.yellow : chalk.red;
+
+  console.log(chalk.gray('ID:                ') + tag.id);
+  console.log(chalk.gray('Status:            ') + statusColor(tag.status));
+  console.log(chalk.gray('Tasks:             ') + `${tag.remainingTaskCount} remaining / ${tag.taskCount} total`);
+  console.log(chalk.gray('Allows Next Action:') + (tag.allowsNextAction ? 'Yes' : 'No'));
+
+  if (tag.parent) {
+    console.log(chalk.gray('Parent:            ') + chalk.cyan(tag.parent));
+  }
+
+  if (tag.children.length > 0) {
+    console.log(chalk.gray('Children:          ') + chalk.cyan(tag.children.join(', ')));
+  }
+
+  if (tag.added) {
+    console.log(chalk.gray('Created:           ') + format(new Date(tag.added), 'PPP p'));
+  }
+
+  if (tag.modified) {
+    console.log(chalk.gray('Modified:          ') + format(new Date(tag.modified), 'PPP p'));
+  }
+
+  if (tag.lastActivity) {
+    const activityDate = new Date(tag.lastActivity);
+    const dateStr = formatDistanceToNow(activityDate, { addSuffix: true });
+    console.log(chalk.gray('Last Activity:     ') + `${format(activityDate, 'PPP p')} (${dateStr})`);
   }
 
   console.log();

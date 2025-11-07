@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { displayTaskList, displayTaskDetails, displayWithSuccessMessage, displaySuccessMessage } from '../lib/display.js';
+import { displayTaskList, displayTaskDetails, displayWithSuccessMessage, displaySuccessMessage, displayTaskStats } from '../lib/display.js';
 import { executeOmniFocusCommand } from '../lib/command-utils.js';
 import type { TaskFilters, UpdateTaskOptions } from '../types.js';
 
@@ -123,6 +123,18 @@ export function createTaskCommand(): Command {
         (of) => of.getTask(idOrName),
         (task) => displayTaskDetails(task),
         'Failed to load task'
+      );
+    });
+
+  command
+    .command('stats')
+    .description('Show task statistics')
+    .action(async () => {
+      await executeOmniFocusCommand(
+        'Analyzing tasks...',
+        (of) => of.getTaskStats(),
+        (stats) => displayTaskStats(stats),
+        'Failed to analyze tasks'
       );
     });
 
