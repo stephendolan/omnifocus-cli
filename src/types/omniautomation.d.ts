@@ -208,16 +208,16 @@ declare class ColorSpace {
 
 declare class CombinedValues {
     readonly name: string;
-    readonly values: Array<Object>;
+    readonly values: Array<unknown>;
 }
 
 // Console
 
 declare class Console {
-    log(message: Object, additional: Array<Object | null>): void;
-    error(message: Object, additional: Array<Object | null>): void;
-    info(message: Object, additional: Array<Object | null>): void;
-    warn(message: Object, additional: Array<Object | null>): void;
+    log(message: unknown, additional: Array<unknown | null>): void;
+    error(message: unknown, additional: Array<unknown | null>): void;
+    info(message: unknown, additional: Array<unknown | null>): void;
+    warn(message: unknown, additional: Array<unknown | null>): void;
     clear(): void;
 }
 
@@ -282,7 +282,7 @@ declare class Data {
     toString(encoding: StringEncoding | null): string;
     toBase64(): string;
     readonly length: number;
-    readonly toObject: Object | null;
+    readonly toObject: unknown | null;
 }
 
 // Database
@@ -528,7 +528,7 @@ declare namespace Perspective {
     class Custom extends DatedObject {
         fileWrapper(): FileWrapper;
         writeFileRepresentationIntoDirectory(parentURL: URL): URL;
-        archivedFilterRules: Object;
+        archivedFilterRules: unknown;
         archivedTopLevelFilterAggregation: string | null;
         iconColor: Color | null;
         readonly identifier: string;
@@ -899,7 +899,7 @@ declare class Form {
     show(title: string, confirmTitle: string): Promise<Form>;
     readonly fields: Array<Form.Field>;
     validate: (Form: Form) => boolean | null;
-    readonly values: Object;
+    readonly values: unknown;
 }
 
 // Form.Field
@@ -931,7 +931,7 @@ declare namespace Form.Field {
 
 declare namespace Form.Field {
     class MultipleOptions extends Form.Field {
-        constructor (key: string, displayName: string | null, options: Array<Object>, names: Array<string> | null, selected: Array<Object>);
+        constructor (key: string, displayName: string | null, options: Array<unknown>, names: Array<string> | null, selected: Array<unknown>);
     }
 }
 
@@ -939,7 +939,7 @@ declare namespace Form.Field {
 
 declare namespace Form.Field {
     class Option extends Form.Field {
-        constructor (key: string, displayName: string | null, options: Array<Object>, names: Array<string> | null, selected: Object | null, nullOptionTitle: string | null);
+        constructor (key: string, displayName: string | null, options: Array<unknown>, names: Array<string> | null, selected: unknown | null, nullOptionTitle: string | null);
         allowsNull: boolean;
         nullOptionTitle: string | null;
     }
@@ -957,7 +957,7 @@ declare namespace Form.Field {
 
 declare namespace Form.Field {
     class String extends Form.Field {
-        constructor (key: string, displayName: string | null, value: Object | null, formatter: Formatter | null);
+        constructor (key: string, displayName: string | null, value: unknown | null, formatter: Formatter | null);
     }
 }
 
@@ -1064,7 +1064,7 @@ declare namespace LanguageModel {
 // LanguageModel.Schema
 
 declare namespace LanguageModel.Schema {
-    function fromJSON(json: Object): LanguageModel.Schema;
+    function fromJSON(json: unknown): LanguageModel.Schema;
 }
 
 declare namespace LanguageModel {
@@ -1151,7 +1151,7 @@ declare class Notification {
 // ObjectIdentifier
 
 declare class ObjectIdentifier {
-    readonly objectClass: Object | null;
+    readonly objectClass: unknown | null;
     readonly primaryKey: string;
 }
 
@@ -1258,17 +1258,17 @@ declare class PlugIn {
 
 declare namespace PlugIn {
     class Action {
-        constructor (perform: Function);
+        constructor (perform: (...args: unknown[]) => unknown);
         readonly description: string;
         readonly label: string;
         readonly longLabel: string;
         readonly mediumLabel: string;
         readonly name: string;
         readonly paletteLabel: string;
-        readonly perform: Function;
+        readonly perform: (...args: unknown[]) => unknown;
         readonly plugIn: PlugIn;
         readonly shortLabel: string;
-        validate: Function | null;
+        validate: (...args: unknown[]) => unknown | null;
     }
 }
 
@@ -1276,12 +1276,12 @@ declare namespace PlugIn {
 
 declare namespace PlugIn {
     class Handler {
-        constructor (invoke: Function);
-        readonly invoke: Function;
+        constructor (invoke: (...args: unknown[]) => unknown);
+        readonly invoke: (...args: unknown[]) => unknown;
         readonly name: string;
         readonly plugIn: PlugIn;
-        willAttach: Function | null;
-        willDetach: Function | null;
+        willAttach: (...args: unknown[]) => unknown | null;
+        willDetach: (...args: unknown[]) => unknown | null;
     }
 }
 
@@ -1300,7 +1300,7 @@ declare namespace PlugIn {
 
 declare class Preferences {
     constructor (identifier: string | null);
-    read(key: string): Object | null;
+    read(key: string): unknown | null;
     readBoolean(key: string): boolean;
     readString(key: string): string | null;
     readNumber(key: string): number;
@@ -1345,7 +1345,7 @@ declare class QuickOpenScriptAction {
 // Selection
 
 declare class Selection {
-    readonly allObjects: Array<Object>;
+    readonly allObjects: Array<unknown>;
     readonly database: Database | null;
     readonly databaseObjects: Array<DatabaseObject>;
     readonly document: DatabaseDocument | null;
@@ -1359,10 +1359,10 @@ declare class Selection {
 // Settings
 
 declare class Settings {
-    defaultObjectForKey(key: string): Object | null;
+    defaultObjectForKey(key: string): unknown | null;
     hasNonDefaultObjectForKey(key: string): boolean;
-    objectForKey(key: string): Object | null;
-    setObjectForKey(value: Object | null, key: string): void;
+    objectForKey(key: string): unknown | null;
+    setObjectForKey(value: unknown | null, key: string): void;
     boolForKey(key: string): boolean;
     setBoolForKey(value: boolean, key: string): void;
     integerForKey(key: string): number;
@@ -1504,9 +1504,9 @@ declare class StringEncoding {
 // Style
 
 declare class Style {
-    set(attribute: Style.Attribute, value: Object | null): boolean;
-    get(attribute: Style.Attribute): Object | null;
-    localValueForAttribute(attribute: Style.Attribute): Object | null;
+    set(attribute: Style.Attribute, value: unknown | null): boolean;
+    get(attribute: Style.Attribute): unknown | null;
+    localValueForAttribute(attribute: Style.Attribute): unknown | null;
     addNamedStyle(namedStyle: NamedStyle): void;
     removeNamedStyle(namedStyle: NamedStyle): void;
     influencedBy(otherStyle: Style): boolean;
@@ -1578,7 +1578,7 @@ declare namespace Style.Attribute {
 
 declare namespace Style {
     class Attribute {
-        readonly defaultValue: Object;
+        readonly defaultValue: unknown;
         readonly key: string;
     }
 }
@@ -1847,8 +1847,8 @@ declare class ToolbarItem {
 // Tree
 
 declare class Tree {
-    nodeForObject(object: Object): TreeNode | null;
-    nodesForObjects(object: Array<Object>): Array<TreeNode>;
+    nodeForObject(object: unknown): TreeNode | null;
+    nodesForObjects(object: Array<unknown>): Array<TreeNode>;
     reveal(nodes: Array<TreeNode>): void;
     select(nodes: Array<TreeNode>, extending: boolean | null): void;
     copyNodes(nodes: Array<TreeNode>, to: Pasteboard): void;
@@ -1889,7 +1889,7 @@ declare class TreeNode {
     readonly isSelectable: boolean;
     isSelected: boolean;
     readonly level: number;
-    readonly object: Object;
+    readonly object: unknown;
     readonly parent: TreeNode | null;
     readonly rootNode: TreeNode;
 }
@@ -1938,8 +1938,8 @@ declare namespace URL {
     function chooseFolder(): URL | null;
     function fromString(string: string, relativeToURL: URL | null): URL | null;
     function fromPath(path: string, isDirectory: boolean, relativeToURL: URL | null): URL;
-    function tellScript(app: string, js: string, arg: Object | null): URL | null;
-    function tellFunction(app: string, jsFunction: Function, arg: Object | null): URL | null;
+    function tellScript(app: string, js: string, arg: unknown | null): URL | null;
+    function tellFunction(app: string, jsFunction: (...args: unknown[]) => unknown, arg: unknown | null): URL | null;
     function omniLink(path: string, folderName: string): URL;
     function resolveFileURLForOmniLink(omniLink: URL, additionalPromptMessage: string | null, additionalQueryItems: Array<URL.QueryItem> | null): Promise<URL>;
     function omniLinkForFileURL(fileURL: URL, additionalQueryItems: Array<URL.QueryItem> | null, additionalPromptMessage: string | null): Promise<URL>;
@@ -1949,7 +1949,7 @@ declare namespace URL {
 
 declare class URL {
     fetch(success: (contents: Data) => void, failure: (error: Error) => void | null): void;
-    call(success: Function, failure: Function | null): void;
+    call(success: (...args: unknown[]) => unknown, failure: (...args: unknown[]) => unknown | null): void;
     open(): void;
     find(types: Array<TypeIdentifier>, recurse: boolean | null): Promise<Array<URL>>;
     toString(): string;

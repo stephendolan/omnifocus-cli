@@ -57,7 +57,7 @@ function displayMetric(label: string, value: string | number, valueColor?: typeo
   console.log(chalk.gray(label.padEnd(25)) + formattedValue);
 }
 
-function displayTopList(title: string, items: Array<{ name: string; [key: string]: any }>, countKey: string, color: typeof chalk = chalk.cyan): void {
+function displayTopList(title: string, items: Array<{ name: string; [key: string]: unknown }>, countKey: string, color: typeof chalk = chalk.cyan): void {
   if (items.length === 0) return;
 
   console.log();
