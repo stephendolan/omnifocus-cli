@@ -10,6 +10,8 @@ export interface Task {
   due: string | null;
   estimatedMinutes: number | null;
   completionDate: string | null;
+  added: string | null;
+  modified: string | null;
 }
 
 export interface Project {

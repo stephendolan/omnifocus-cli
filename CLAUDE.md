@@ -40,7 +40,7 @@ The `OmniFocus` class is the central integration point:
 Commands follow Commander.js patterns:
 - Each command module exports a `createXCommand()` function returning a configured Command
 - Commands use `executeOmniFocusCommand()` helper that handles spinner, OmniFocus instance, and error handling
-- Display functions are separated in `lib/display.ts` for consistent formatting
+- All commands output JSON for machine-readable automation
 
 Files:
 - `src/index.ts` - Main entry point, registers all commands
@@ -49,14 +49,7 @@ Files:
 - `src/commands/inbox.ts` - Inbox list/count
 - `src/commands/perspective.ts` - Perspective switching and viewing
 - `src/commands/search.ts` - Task search
-
-### Display Layer (src/lib/display.ts)
-
-Provides formatted, color-coded output using chalk and date-fns:
-- Task indicators: ⭐ (flagged), ✓ (completed), ○ (incomplete)
-- Project indicators: ● colored by status (green=active, yellow=on hold, red=dropped)
-- Date formatting: Shows relative times ("due 2 days ago") with red for overdue
-- Verbose mode: Shows IDs, notes, and additional metadata
+- `src/commands/tag.ts` - Tag management and statistics
 
 ### Type Definitions
 
@@ -82,7 +75,7 @@ Core types in `src/types.ts`:
 ### Error Handling
 Commands use `executeOmniFocusCommand()` which:
 - Shows loading spinner during execution
-- Catches errors and displays them with chalk.red
+- Catches errors and outputs error messages to stderr
 - Calls `process.exit(1)` on failure
 - OmniFocus API errors (like "Task not found") bubble up from JXA execution
 
@@ -104,8 +97,8 @@ Commands use `executeOmniFocusCommand()` which:
 ## Date Handling
 
 - Accept ISO format strings: `YYYY-MM-DD` or full ISO like `2024-01-15T10:00:00`
-- Store as ISO strings in Task objects
-- Display with date-fns: relative times for lists, formatted dates for details
+- Store and output as ISO strings in Task objects
+- Client applications can parse and format dates as needed
 
 ## Task/Project Identification
 

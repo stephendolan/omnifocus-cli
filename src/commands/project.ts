@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { displayProjectList, displayProjectDetails, displayWithSuccessMessage, displaySuccessMessage, displayProjectStats } from '../lib/display.js';
+import { outputJson } from '../lib/output.js';
 import { executeOmniFocusCommand } from '../lib/command-utils.js';
 import type { ProjectFilters, UpdateProjectOptions } from '../types.js';
 
@@ -14,7 +14,6 @@ export function createProjectCommand(): Command {
     .option('-f, --folder <name>', 'Filter by folder')
     .option('-s, --status <status>', 'Filter by status (active, on hold, dropped)')
     .option('-d, --dropped', 'Include dropped projects')
-    .option('-v, --verbose', 'Show detailed information')
     .action(async (options) => {
       await executeOmniFocusCommand(
         'Loading projects...',
@@ -27,7 +26,7 @@ export function createProjectCommand(): Command {
 
           return of.listProjects(filters);
         },
-        (projects) => displayProjectList(projects, options.verbose),
+        (projects) => outputJson(projects),
         'Failed to load projects'
       );
     });
@@ -51,7 +50,7 @@ export function createProjectCommand(): Command {
           sequential: options.sequential,
           status: options.status,
         }),
-        (project) => displayWithSuccessMessage('Project created successfully', project, displayProjectDetails),
+        (project) => outputJson(project),
         'Failed to create project'
       );
     });
@@ -82,7 +81,7 @@ export function createProjectCommand(): Command {
 
           return of.updateProject(idOrName, updates);
         },
-        (project) => displayWithSuccessMessage('Project updated successfully', project, displayProjectDetails),
+        (project) => outputJson(project),
         'Failed to update project'
       );
     });
@@ -95,7 +94,7 @@ export function createProjectCommand(): Command {
       await executeOmniFocusCommand(
         'Deleting project...',
         (of) => of.deleteProject(idOrName),
-        () => displaySuccessMessage('Project deleted successfully'),
+        () => outputJson({ message: 'Project deleted successfully' }),
         'Failed to delete project'
       );
     });
@@ -107,7 +106,7 @@ export function createProjectCommand(): Command {
       await executeOmniFocusCommand(
         'Loading project...',
         (of) => of.getProject(idOrName),
-        (project) => displayProjectDetails(project),
+        (project) => outputJson(project),
         'Failed to load project'
       );
     });
@@ -119,7 +118,7 @@ export function createProjectCommand(): Command {
       await executeOmniFocusCommand(
         'Analyzing projects...',
         (of) => of.getProjectStats(),
-        (stats) => displayProjectStats(stats),
+        (stats) => outputJson(stats),
         'Failed to analyze projects'
       );
     });

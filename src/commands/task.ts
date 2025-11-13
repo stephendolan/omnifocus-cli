@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { displayTaskList, displayTaskDetails, displayWithSuccessMessage, displaySuccessMessage, displayTaskStats } from '../lib/display.js';
+import { outputJson } from '../lib/output.js';
 import { executeOmniFocusCommand } from '../lib/command-utils.js';
 import type { TaskFilters, UpdateTaskOptions } from '../types.js';
 
@@ -15,7 +15,6 @@ export function createTaskCommand(): Command {
     .option('-p, --project <name>', 'Filter by project')
     .option('-t, --tag <name>', 'Filter by tag')
     .option('-c, --completed', 'Include completed tasks')
-    .option('-v, --verbose', 'Show detailed information')
     .action(async (options) => {
       await executeOmniFocusCommand(
         'Loading tasks...',
@@ -29,7 +28,7 @@ export function createTaskCommand(): Command {
 
           return of.listTasks(filters);
         },
-        (tasks) => displayTaskList(tasks, options.verbose),
+        (tasks) => outputJson(tasks),
         'Failed to load tasks'
       );
     });
@@ -57,7 +56,7 @@ export function createTaskCommand(): Command {
           flagged: options.flagged,
           estimatedMinutes: options.estimate,
         }),
-        (task) => displayWithSuccessMessage('Task created successfully', task, displayTaskDetails),
+        (task) => outputJson(task),
         'Failed to create task'
       );
     });
@@ -96,7 +95,7 @@ export function createTaskCommand(): Command {
 
           return of.updateTask(idOrName, updates);
         },
-        (task) => displayWithSuccessMessage('Task updated successfully', task, displayTaskDetails),
+        (task) => outputJson(task),
         'Failed to update task'
       );
     });
@@ -109,7 +108,7 @@ export function createTaskCommand(): Command {
       await executeOmniFocusCommand(
         'Deleting task...',
         (of) => of.deleteTask(idOrName),
-        () => displaySuccessMessage('Task deleted successfully'),
+        () => outputJson({ message: 'Task deleted successfully' }),
         'Failed to delete task'
       );
     });
@@ -121,7 +120,7 @@ export function createTaskCommand(): Command {
       await executeOmniFocusCommand(
         'Loading task...',
         (of) => of.getTask(idOrName),
-        (task) => displayTaskDetails(task),
+        (task) => outputJson(task),
         'Failed to load task'
       );
     });
@@ -133,7 +132,7 @@ export function createTaskCommand(): Command {
       await executeOmniFocusCommand(
         'Analyzing tasks...',
         (of) => of.getTaskStats(),
-        (stats) => displayTaskStats(stats),
+        (stats) => outputJson(stats),
         'Failed to analyze tasks'
       );
     });

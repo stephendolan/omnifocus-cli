@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { displayTaskList, displayPerspectiveList } from '../lib/display.js';
+import { outputJson } from '../lib/output.js';
 import { executeOmniFocusCommand } from '../lib/command-utils.js';
 
 export function createPerspectiveCommand(): Command {
@@ -14,7 +14,7 @@ export function createPerspectiveCommand(): Command {
       await executeOmniFocusCommand(
         'Loading perspectives...',
         (of) => of.listPerspectives(),
-        (perspectives) => displayPerspectiveList(perspectives),
+        (perspectives) => outputJson(perspectives),
         'Failed to load perspectives'
       );
     });
@@ -22,12 +22,11 @@ export function createPerspectiveCommand(): Command {
   command
     .command('view <name>')
     .description('View tasks in a perspective')
-    .option('-v, --verbose', 'Show detailed information')
-    .action(async (name, options) => {
+    .action(async (name) => {
       await executeOmniFocusCommand(
         `Loading perspective "${name}"...`,
         (of) => of.getPerspectiveTasks(name),
-        (tasks) => displayTaskList(tasks, options.verbose),
+        (tasks) => outputJson(tasks),
         'Failed to load perspective'
       );
     });

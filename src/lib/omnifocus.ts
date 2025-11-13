@@ -47,7 +47,9 @@ export class OmniFocus {
         defer: task.deferDate ? task.deferDate.toISOString() : null,
         due: task.dueDate ? task.dueDate.toISOString() : null,
         estimatedMinutes: task.estimatedMinutes || null,
-        completionDate: task.completionDate ? task.completionDate.toISOString() : null
+        completionDate: task.completionDate ? task.completionDate.toISOString() : null,
+        added: task.added ? task.added.toISOString() : null,
+        modified: task.modified ? task.modified.toISOString() : null
       };
     }
 
@@ -237,8 +239,7 @@ export class OmniFocus {
     } finally {
       try {
         await unlink(tmpFile);
-      } catch (error) {
-        // Temporary file cleanup is non-critical and safe to ignore
+      } catch {
       }
     }
   }

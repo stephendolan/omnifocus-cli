@@ -15,7 +15,7 @@ A powerful command-line interface for OmniFocus on macOS, inspired by the GitHub
 - 📥 **Inbox Management** - View and count inbox items
 - 🏷️ **Tag Analysis** - View tag usage statistics and identify stale tags
 - 🔍 **Search** - Full-text search across tasks
-- 🎨 **Beautiful Output** - Color-coded, formatted output with icons
+- 📊 **JSON Output** - Machine-readable output for automation and scripting
 - ⚡ **Fast** - Direct OmniFocus integration using JXA
 
 ## Installation
@@ -39,6 +39,40 @@ npm run link  # Build and link globally
 
 Now you can use the `of` command anywhere in your terminal.
 
+## Output Format
+
+All commands output JSON by default:
+
+```bash
+# Pretty-printed JSON (default)
+of task list
+
+# Compact JSON (single line)
+of task list --compact
+```
+
+### Working with JSON Output
+
+Use `jq` to filter and transform the JSON output:
+
+```bash
+# Count inbox tasks
+of inbox list | jq 'length'
+
+# Get task names only
+of task list | jq '.[] | .name'
+
+# Get flagged tasks with specific fields
+of task list --flagged | jq '.[] | {name, project, due}'
+
+# Find tasks added more than 2 hours ago
+of inbox list | jq --arg cutoff "$(date -u -v-2H +%Y-%m-%dT%H:%M:%SZ)" \
+  '.[] | select(.added < $cutoff)'
+
+# Count unprocessed inbox items
+of inbox list | jq '[.[] | select(.project == null)] | length'
+```
+
 ## Usage
 
 ### Task Commands
@@ -60,9 +94,6 @@ of task list --tag "urgent"
 
 # Include completed tasks
 of task list --completed
-
-# Show verbose details
-of task list -v
 ```
 
 #### Create a Task
@@ -135,9 +166,6 @@ of project list --status "on hold"
 
 # Include dropped projects
 of project list --dropped
-
-# Show verbose details
-of project list -v
 ```
 
 #### Create a Project
@@ -181,9 +209,6 @@ of inbox count
 ```bash
 # Search for tasks
 of search "documentation"
-
-# Show verbose results
-of search "meeting" -v
 ```
 
 ### Tag Commands
@@ -205,9 +230,6 @@ of tag list --sort activity
 
 # Only count active (incomplete) tasks
 of tag list --active-only
-
-# Show verbose details (IDs, creation/modification dates)
-of tag list -v
 ```
 
 #### Tag Statistics
@@ -217,12 +239,7 @@ of tag list -v
 of tag stats
 ```
 
-The `tag stats` command displays:
-- Total tag counts (total, active, with tasks, unused)
-- Average tasks per tag
-- Most used tags (top 5)
-- Least used tags (bottom 5)
-- Stale tags (no activity in 30+ days)
+Displays total tag counts, average tasks per tag, most/least used tags, and stale tags.
 
 #### Create Tag
 
@@ -247,11 +264,7 @@ of tag view "kXu3B-LZfFH"
 of tag view "Parent/Child"
 ```
 
-**Note:** If multiple tags share the same name in different hierarchies (e.g., "Work/Meetings" and "Personal/Meetings"), you must use either:
-- The full hierarchical path: `of tag view "Work/Meetings"`
-- The tag ID: `of tag view "kXu3B-LZfFH"`
-
-The command will show an error with available paths and IDs if the name is ambiguous.
+If multiple tags share the same name in different hierarchies, use the full hierarchical path or tag ID. The command will show available paths if the name is ambiguous.
 
 #### Update Tag
 
@@ -288,6 +301,7 @@ of tag delete "Parent/Child"
 
 - `-h, --help` - Show help for any command
 - `-V, --version` - Show version number
+- `--compact` - Compact JSON output (single line)
 
 ### Task Filters
 
@@ -295,7 +309,6 @@ of tag delete "Parent/Child"
 - `-p, --project <name>` - Filter by project name
 - `-t, --tag <name>` - Filter by tag name
 - `-c, --completed` - Include completed tasks
-- `-v, --verbose` - Show detailed information
 
 ### Task Options
 
@@ -321,7 +334,6 @@ of tag delete "Parent/Child"
 - `-u, --unused-days <days>` - Show tags unused for N days
 - `-s, --sort <field>` - Sort by: name, usage, activity (default: name)
 - `-a, --active-only` - Only count active (incomplete) tasks
-- `-v, --verbose` - Show detailed information (IDs, dates)
 
 **Create/Update options:**
 - `-p, --parent <name>` - Create as child of parent tag (create only)
@@ -329,33 +341,23 @@ of tag delete "Parent/Child"
 - `-a, --active` - Set tag as active (update only)
 - `-i, --inactive` - Set tag as inactive (update only)
 
-## Output Legend
+## Task Object Schema
 
-### Task List
+Task objects include these fields:
 
-- `⭐` - Flagged task
-- `✓` - Completed task
-- `○` - Incomplete task
-- `[Project]` - Project name (cyan)
-- `#tag` - Tags (magenta)
-- `due X ago` - Overdue tasks (red)
-- `due in X` - Upcoming tasks (gray)
-- `[Xh Xm]` - Time estimate (gray)
-
-### Project List
-
-- `●` - Status indicator (green=active, yellow=on hold, red=dropped)
-- `(X/Y)` - Remaining/Total tasks
-- `[sequential]` - Sequential project indicator (blue)
-- `[Folder]` - Folder name (cyan)
-- `#tag` - Tags (magenta)
-
-### Tag List
-
-- `#tag` - Tag name (cyan if active, gray if inactive)
-- `(X/Y)` - Remaining/Total tasks
-- `active X ago` - Last activity timestamp (cyan)
-- `never used` - Tag has no tasks (gray)
+- `id` - Unique identifier
+- `name` - Task name
+- `note` - Notes (or null)
+- `completed` - Boolean completion status
+- `flagged` - Boolean flagged status
+- `project` - Project name (null for inbox items)
+- `tags` - Array of tag names
+- `defer` - Defer date in ISO format (or null)
+- `due` - Due date in ISO format (or null)
+- `estimatedMinutes` - Time estimate in minutes (or null)
+- `completionDate` - Completion timestamp (or null)
+- `added` - Creation timestamp (or null)
+- `modified` - Last modification timestamp (or null)
 
 ## Examples
 
@@ -379,10 +381,10 @@ of project list
 
 ```bash
 # Check all projects
-of project list -v
+of project list
 
 # Review flagged items
-of task list --flagged -v
+of task list --flagged
 
 # Search for specific topics
 of search "meeting"
@@ -452,12 +454,7 @@ of tag delete "Obsolete Tag"
 
 ## How It Works
 
-The CLI uses JavaScript for Automation (JXA) to communicate directly with OmniFocus via AppleScript. This provides:
-
-- Fast, direct access to your OmniFocus data
-- No need for sync or external services
-- Full access to OmniFocus features
-- Real-time updates
+The CLI uses JavaScript for Automation (JXA) to communicate directly with OmniFocus, providing fast, direct access without external services.
 
 ## Development
 
@@ -483,7 +480,7 @@ When you first run a command, macOS will ask for permission to control OmniFocus
 
 ### Task Not Found
 
-Use the exact task name or ID. For IDs, you can get them using the `-v` (verbose) flag with list commands.
+Use the exact task name or ID. Task IDs are included in the JSON output of all list commands.
 
 ### Date Format
 

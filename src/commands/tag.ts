@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { displayTagList, displayTagStats, displayTagDetails, displayWithSuccessMessage, displaySuccessMessage } from '../lib/display.js';
+import { outputJson } from '../lib/output.js';
 import { executeOmniFocusCommand } from '../lib/command-utils.js';
 import type { UpdateTagOptions } from '../types.js';
 
@@ -14,7 +14,6 @@ export function createTagCommand(): Command {
     .option('-u, --unused-days <days>', 'Show tags unused for N days', parseInt)
     .option('-s, --sort <field>', 'Sort by: name, usage, activity (default: name)', 'name')
     .option('-a, --active-only', 'Only count active (incomplete) tasks')
-    .option('-v, --verbose', 'Show detailed information')
     .action(async (options) => {
       await executeOmniFocusCommand(
         'Loading tags...',
@@ -23,7 +22,7 @@ export function createTagCommand(): Command {
           sortBy: options.sort,
           activeOnly: options.activeOnly,
         }),
-        (tags) => displayTagList(tags, options.verbose),
+        (tags) => outputJson(tags),
         'Failed to load tags'
       );
     });
@@ -41,7 +40,7 @@ export function createTagCommand(): Command {
           parent: options.parent,
           status: options.status,
         }),
-        (tag) => displayWithSuccessMessage('Tag created successfully', tag, displayTagDetails),
+        (tag) => outputJson(tag),
         'Failed to create tag'
       );
     });
@@ -53,7 +52,7 @@ export function createTagCommand(): Command {
       await executeOmniFocusCommand(
         'Loading tag...',
         (of) => of.getTag(idOrName),
-        (tag) => displayTagDetails(tag),
+        (tag) => outputJson(tag),
         'Failed to load tag'
       );
     });
@@ -73,7 +72,7 @@ export function createTagCommand(): Command {
           };
           return of.updateTag(idOrName, updates);
         },
-        (tag) => displayWithSuccessMessage('Tag updated successfully', tag, displayTagDetails),
+        (tag) => outputJson(tag),
         'Failed to update tag'
       );
     });
@@ -86,7 +85,7 @@ export function createTagCommand(): Command {
       await executeOmniFocusCommand(
         'Deleting tag...',
         (of) => of.deleteTag(idOrName),
-        () => displaySuccessMessage('Tag deleted successfully'),
+        () => outputJson({ message: 'Tag deleted successfully' }),
         'Failed to delete tag'
       );
     });
@@ -98,7 +97,7 @@ export function createTagCommand(): Command {
       await executeOmniFocusCommand(
         'Analyzing tags...',
         (of) => of.getTagStats(),
-        (stats) => displayTagStats(stats),
+        (stats) => outputJson(stats),
         'Failed to analyze tags'
       );
     });
