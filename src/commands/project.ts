@@ -35,7 +35,7 @@ export function createProjectCommand(): Command {
     .command('create <name>')
     .description('Create a new project')
     .option('-f, --folder <name>', 'Assign to folder')
-    .option('-n, --note <text>', 'Add note')
+    .option('--note <text>', 'Add note')
     .option('-t, --tag <tags...>', 'Add tags')
     .option('-s, --sequential', 'Make it a sequential project')
     .option('--status <status>', 'Set status (active, on hold, dropped)')

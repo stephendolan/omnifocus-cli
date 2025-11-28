@@ -37,7 +37,7 @@ export function createTaskCommand(): Command {
     .command('create <name>')
     .description('Create a new task')
     .option('-p, --project <name>', 'Assign to project')
-    .option('-n, --note <text>', 'Add note')
+    .option('--note <text>', 'Add note')
     .option('-t, --tag <tags...>', 'Add tags')
     .option('-d, --due <date>', 'Set due date (ISO format)')
     .option('-D, --defer <date>', 'Set defer date (ISO format)')

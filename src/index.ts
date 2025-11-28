@@ -30,4 +30,6 @@ program.addCommand(createSearchCommand());
 program.addCommand(createPerspectiveCommand());
 program.addCommand(createTagCommand());
 
-program.parse();
+program.parseAsync().catch(() => {
+  process.exit(1);
+});

@@ -222,7 +222,7 @@ export class OmniFocus {
     try {
       await writeFile(tmpFile, script, 'utf-8');
 
-      const { stdout, stderr } = await execFileAsync(
+      const { stdout } = await execFileAsync(
         'osascript',
         ['-l', 'JavaScript', tmpFile],
         {
@@ -231,16 +231,11 @@ export class OmniFocus {
         }
       );
 
-      if (stderr) {
-        console.error('JXA stderr:', stderr);
-      }
-
       return stdout.trim();
     } finally {
       try {
         await unlink(tmpFile);
-      } catch {
-      }
+      } catch { /* ignore cleanup errors */ }
     }
   }
 
@@ -249,7 +244,8 @@ export class OmniFocus {
       .replace(/\\/g, '\\\\')
       .replace(/"/g, '\\"')
       .replace(/\n/g, '\\n')
-      .replace(/\r/g, '\\r');
+      .replace(/\r/g, '\\r')
+      .replace(/\t/g, '\\t');
   }
 
   private wrapOmniScript(omniScript: string): string {
@@ -333,13 +329,13 @@ export class OmniFocus {
     }
     if (options.defer !== undefined) {
       updates.push(options.defer
-        ? `task.deferDate = new Date("${options.defer}");`
+        ? `task.deferDate = new Date(${JSON.stringify(options.defer)});`
         : 'task.deferDate = null;'
       );
     }
     if (options.due !== undefined) {
       updates.push(options.due
-        ? `task.dueDate = new Date("${options.due}");`
+        ? `task.dueDate = new Date(${JSON.stringify(options.due)});`
         : 'task.dueDate = null;'
       );
     }
@@ -427,8 +423,8 @@ export class OmniFocus {
         ${options.note ? `task.note = "${this.escapeString(options.note)}";` : ''}
         ${options.flagged ? 'task.flagged = true;' : ''}
         ${options.estimatedMinutes ? `task.estimatedMinutes = ${options.estimatedMinutes};` : ''}
-        ${options.defer ? `task.deferDate = new Date("${options.defer}");` : ''}
-        ${options.due ? `task.dueDate = new Date("${options.due}");` : ''}
+        ${options.defer ? `task.deferDate = new Date(${JSON.stringify(options.defer)});` : ''}
+        ${options.due ? `task.dueDate = new Date(${JSON.stringify(options.due)});` : ''}
         ${options.tags && options.tags.length > 0 ? `assignTags(task, ${JSON.stringify(options.tags)});` : ''}
 
         return JSON.stringify(serializeTask(task));

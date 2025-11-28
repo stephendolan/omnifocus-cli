@@ -18,7 +18,7 @@ export async function executeCommand<T>(
   } catch (error) {
     spinner.fail(failureMessage || 'Command failed');
     console.error(chalk.red((error as Error).message));
-    process.exit(1);
+    throw error;
   }
 }
 
