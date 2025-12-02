@@ -35,6 +35,8 @@ describe('isTaskOverdue', () => {
     defer: null,
     estimatedMinutes: null,
     completionDate: null,
+    added: null,
+    modified: null,
   };
 
   it('returns false when task has no due date', () => {
