@@ -417,7 +417,7 @@ export class OmniFocus {
         ${options.project
           ? `const targetProject = findByName(flattenedProjects, "${this.escapeString(options.project)}", "Project");
              const task = new Task("${this.escapeString(options.name)}", targetProject);`
-          : `const task = new Task("${this.escapeString(options.name)}", inbox);`
+          : `const task = new Task("${this.escapeString(options.name)}");`
         }
 
         ${options.note ? `task.note = "${this.escapeString(options.note)}";` : ''}
