@@ -20,6 +20,8 @@ import type {
   ProjectStats,
   CreateTagOptions,
   UpdateTagOptions,
+  Folder,
+  FolderFilters,
 } from '../types.js';
 
 const execFileAsync = promisify(execFile);
@@ -41,6 +43,8 @@ export class OmniFocus {
         name: task.name,
         note: task.note || null,
         completed: task.completed,
+        dropped: task.dropped,
+        effectivelyActive: task.effectiveActive,
         flagged: task.flagged,
         project: containingProject ? containingProject.name : null,
         tags: tagNames,
@@ -54,7 +58,7 @@ export class OmniFocus {
     }
 
     function serializeProject(project) {
-      const folder = project.folder;
+      const parentFolder = project.parentFolder;
       const allTasks = project.flattenedTasks;
       const remainingTasks = allTasks.filter(t => !t.completed);
       const tagNames = project.tags.map(t => t.name);
@@ -64,7 +68,7 @@ export class OmniFocus {
         name: project.name,
         note: project.note || null,
         status: projectStatusToString(project.status),
-        folder: folder ? folder.name : null,
+        folder: parentFolder ? parentFolder.name : null,
         sequential: project.sequential,
         taskCount: allTasks.length,
         remainingCount: remainingTasks.length,
@@ -154,6 +158,8 @@ export class OmniFocus {
     function statusToString(status, StatusEnum) {
       if (status === StatusEnum.Active) return 'active';
       if (status === StatusEnum.OnHold) return 'on hold';
+      if (status === StatusEnum.Dropped) return 'dropped';
+      if (status === StatusEnum.Done) return 'done';
       return 'dropped';
     }
 
@@ -165,8 +171,31 @@ export class OmniFocus {
 
     const projectStatusToString = (status) => statusToString(status, Project.Status);
     const tagStatusToString = (status) => statusToString(status, Tag.Status);
+    const folderStatusToString = (status) => {
+      if (status === Folder.Status.Active) return 'active';
+      return 'dropped';
+    };
     const stringToProjectStatus = (str) => stringToStatus(str, Project.Status);
     const stringToTagStatus = (str) => stringToStatus(str, Tag.Status);
+
+    function serializeFolder(folder, includeDropped = false) {
+      let childFolders = folder.folders;
+      if (!includeDropped) {
+        childFolders = childFolders.filter(c => c.effectiveActive);
+      }
+
+      return {
+        id: folder.id.primaryKey,
+        name: folder.name,
+        status: folderStatusToString(folder.status),
+        effectivelyActive: folder.effectiveActive,
+        parent: folder.parent ? folder.parent.name : null,
+        projectCount: folder.projects.length,
+        remainingProjectCount: folder.projects.filter(p => p.effectiveActive).length,
+        folderCount: folder.folders.length,
+        children: childFolders.map(child => serializeFolder(child, includeDropped))
+      };
+    }
 
     function computeTopItems(items, keyFn, topN = 5) {
       return items
@@ -264,7 +293,7 @@ export class OmniFocus {
       conditions.push('if (task.completed) continue;');
     }
     if (!filters.includeDropped) {
-      conditions.push('if (task.dropped) continue;');
+      conditions.push('if (!task.effectiveActive) continue;');
     }
     if (filters.flagged) {
       conditions.push('if (!task.flagged) continue;');
@@ -292,18 +321,15 @@ export class OmniFocus {
     const conditions: string[] = [];
 
     if (!filters.includeDropped) {
-      conditions.push('if (project.status === Project.Status.Dropped) continue;');
+      conditions.push('if (project.status === Project.Status.Dropped || project.status === Project.Status.Done) continue;');
+      conditions.push('if (project.parentFolder && !project.parentFolder.effectiveActive) continue;');
     }
     if (filters.status) {
       const statusCheck = this.PROJECT_STATUS_MAP[filters.status];
       conditions.push(`if (project.status !== Project.Status.${statusCheck}) continue;`);
     }
     if (filters.folder) {
-      conditions.push(`
-        if (!project.folder || project.folder.name !== "${this.escapeString(filters.folder)}") {
-          continue;
-        }
-      `);
+      conditions.push(`if (!project.parentFolder || project.parentFolder.name !== "${this.escapeString(filters.folder)}") continue;`);
     }
 
     return conditions.join('\n    ');
@@ -461,18 +487,18 @@ export class OmniFocus {
   }
 
   async listProjects(filters: ProjectFilters = {}): Promise<Project[]> {
+    const filterCode = this.buildProjectFilters(filters);
     const omniScript = `
       ${this.OMNI_HELPERS}
       (() => {
         const results = [];
         for (const project of flattenedProjects) {
-          ${this.buildProjectFilters(filters)}
+          ${filterCode}
           results.push(serializeProject(project));
         }
         return JSON.stringify(results);
       })();
     `;
-
     const output = await this.executeJXA(this.wrapOmniScript(omniScript));
     return JSON.parse(output);
   }
@@ -543,7 +569,7 @@ export class OmniFocus {
 
         for (const task of flattenedTasks) {
           if (task.completed) continue;
-          if (task.dropped) continue;
+          if (!task.effectiveActive) continue;
 
           const name = task.name.toLowerCase();
           const note = (task.note || '').toLowerCase();
@@ -826,7 +852,7 @@ export class OmniFocus {
         const allTasks = Array.from(flattenedTasks);
         const now = new Date();
 
-        const activeTasks = allTasks.filter(t => !t.completed && !t.dropped);
+        const activeTasks = allTasks.filter(t => !t.completed && t.effectiveActive);
         const completedTasks = allTasks.filter(t => t.completed);
         const flaggedTasks = activeTasks.filter(t => t.flagged);
         const overdueActiveTasks = activeTasks.filter(t => t.dueDate && t.dueDate < now);
@@ -837,14 +863,14 @@ export class OmniFocus {
           ? Math.round(totalEstimatedMinutes / tasksWithEstimates.length)
           : null;
 
-        const totalNonDropped = allTasks.filter(t => !t.dropped).length;
+        const totalNonDropped = allTasks.filter(t => t.effectiveActive || t.completed).length;
         const completionRate = totalNonDropped > 0
           ? Math.round((completedTasks.length / totalNonDropped) * 100)
           : 0;
 
         const projectCounts = {};
         for (const task of allTasks) {
-          if (task.dropped) continue;
+          if (!task.effectiveActive && !task.completed) continue;
           const projectName = task.containingProject ? task.containingProject.name : 'Inbox';
           projectCounts[projectName] = (projectCounts[projectName] || 0) + 1;
         }
@@ -855,7 +881,7 @@ export class OmniFocus {
 
         const tagCounts = {};
         for (const task of allTasks) {
-          if (task.dropped) continue;
+          if (!task.effectiveActive && !task.completed) continue;
           for (const tag of task.tags) {
             tagCounts[tag.name] = (tagCounts[tag.name] || 0) + 1;
           }
@@ -890,23 +916,29 @@ export class OmniFocus {
       (() => {
         const allProjects = Array.from(flattenedProjects);
 
-        const activeProjects = allProjects.filter(p => p.status === Project.Status.Active);
-        const onHoldProjects = allProjects.filter(p => p.status === Project.Status.OnHold);
+        function isProjectEffectivelyActive(p) {
+          if (p.status === Project.Status.Dropped || p.status === Project.Status.Done) return false;
+          if (p.parentFolder && !p.parentFolder.effectiveActive) return false;
+          return true;
+        }
+
+        const effectivelyActiveProjects = allProjects.filter(isProjectEffectivelyActive);
+        const activeProjects = effectivelyActiveProjects.filter(p => p.status === Project.Status.Active);
+        const onHoldProjects = effectivelyActiveProjects.filter(p => p.status === Project.Status.OnHold);
         const droppedProjects = allProjects.filter(p => p.status === Project.Status.Dropped);
-        const sequentialProjects = allProjects.filter(p => p.sequential);
-        const parallelProjects = allProjects.filter(p => !p.sequential);
+        const doneProjects = allProjects.filter(p => p.status === Project.Status.Done);
+        const sequentialProjects = effectivelyActiveProjects.filter(p => p.sequential);
+        const parallelProjects = effectivelyActiveProjects.filter(p => !p.sequential);
 
-        const nonDroppedProjects = allProjects.filter(p => p.status !== Project.Status.Dropped);
-
-        const totalTasks = nonDroppedProjects.reduce((sum, p) => sum + p.flattenedTasks.length, 0);
-        const totalRemaining = nonDroppedProjects.reduce((sum, p) => {
+        const totalTasks = effectivelyActiveProjects.reduce((sum, p) => sum + p.flattenedTasks.length, 0);
+        const totalRemaining = effectivelyActiveProjects.reduce((sum, p) => {
           return sum + p.flattenedTasks.filter(t => !t.completed).length;
         }, 0);
 
-        const avgTasksPerProject = computeAverage(totalTasks, nonDroppedProjects.length);
-        const avgRemainingPerProject = computeAverage(totalRemaining, nonDroppedProjects.length);
+        const avgTasksPerProject = computeAverage(totalTasks, effectivelyActiveProjects.length);
+        const avgRemainingPerProject = computeAverage(totalRemaining, effectivelyActiveProjects.length);
 
-        const completionRates = nonDroppedProjects
+        const completionRates = effectivelyActiveProjects
           .filter(p => p.flattenedTasks.length > 0)
           .map(p => {
             const total = p.flattenedTasks.length;
@@ -919,12 +951,12 @@ export class OmniFocus {
           : 0;
 
         const projectsWithMostTasks = computeTopItems(
-          nonDroppedProjects.map(p => ({ name: p.name, taskCount: p.flattenedTasks.length })),
+          effectivelyActiveProjects.map(p => ({ name: p.name, taskCount: p.flattenedTasks.length })),
           'taskCount'
         );
 
         const projectsWithMostRemaining = computeTopItems(
-          nonDroppedProjects
+          effectivelyActiveProjects
             .map(p => ({ name: p.name, remainingCount: p.flattenedTasks.filter(t => !t.completed).length }))
             .filter(p => p.remainingCount > 0),
           'remainingCount'
@@ -935,6 +967,7 @@ export class OmniFocus {
           activeProjects: activeProjects.length,
           onHoldProjects: onHoldProjects.length,
           droppedProjects: droppedProjects.length,
+          doneProjects: doneProjects.length,
           sequentialProjects: sequentialProjects.length,
           parallelProjects: parallelProjects.length,
           avgTasksPerProject,
@@ -943,6 +976,50 @@ export class OmniFocus {
           projectsWithMostTasks,
           projectsWithMostRemaining
         });
+      })();
+    `;
+
+    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
+    return JSON.parse(output);
+  }
+
+  async listFolders(filters: FolderFilters = {}): Promise<Folder[]> {
+    const includeDropped = filters.includeDropped ?? false;
+    const omniScript = `
+      ${this.OMNI_HELPERS}
+      (() => {
+        const includeDropped = ${includeDropped};
+        const results = [];
+        for (const folder of folders) {
+          if (!includeDropped && !folder.effectiveActive) continue;
+          results.push(serializeFolder(folder, includeDropped));
+        }
+        return JSON.stringify(results);
+      })();
+    `;
+
+    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
+    return JSON.parse(output);
+  }
+
+  async getFolder(idOrName: string, filters: FolderFilters = {}): Promise<Folder> {
+    const includeDropped = filters.includeDropped ?? false;
+    const omniScript = `
+      ${this.OMNI_HELPERS}
+      (() => {
+        const includeDropped = ${includeDropped};
+
+        function findFolder(idOrName) {
+          for (const folder of flattenedFolders) {
+            if (folder.id.primaryKey === idOrName || folder.name === idOrName) {
+              return folder;
+            }
+          }
+          throw new Error("Folder not found: " + idOrName);
+        }
+
+        const folder = findFolder("${this.escapeString(idOrName)}");
+        return JSON.stringify(serializeFolder(folder, includeDropped));
       })();
     `;
 

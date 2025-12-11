@@ -3,6 +3,8 @@ export interface Task {
   name: string;
   note: string | null;
   completed: boolean;
+  dropped: boolean;
+  effectivelyActive: boolean;
   flagged: boolean;
   project: string | null;
   tags: string[];
@@ -18,7 +20,7 @@ export interface Project {
   id: string;
   name: string;
   note: string | null;
-  status: 'active' | 'on hold' | 'dropped';
+  status: 'active' | 'on hold' | 'dropped' | 'done';
   folder: string | null;
   sequential: boolean;
   taskCount: number;
@@ -101,6 +103,22 @@ export interface Tag {
   allowsNextAction: boolean;
 }
 
+export interface Folder {
+  id: string;
+  name: string;
+  status: 'active' | 'dropped';
+  effectivelyActive: boolean;
+  parent: string | null;
+  projectCount: number;
+  remainingProjectCount: number;
+  folderCount: number;
+  children: Folder[];
+}
+
+export interface FolderFilters {
+  includeDropped?: boolean;
+}
+
 export interface TagListOptions {
   unusedDays?: number;
   sortBy?: 'name' | 'usage' | 'activity';
@@ -136,6 +154,7 @@ export interface ProjectStats {
   activeProjects: number;
   onHoldProjects: number;
   droppedProjects: number;
+  doneProjects: number;
   sequentialProjects: number;
   parallelProjects: number;
   avgTasksPerProject: number;

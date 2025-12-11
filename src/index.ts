@@ -8,6 +8,7 @@ import { createInboxCommand } from './commands/inbox.js';
 import { createSearchCommand } from './commands/search.js';
 import { createPerspectiveCommand } from './commands/perspective.js';
 import { createTagCommand } from './commands/tag.js';
+import { createFolderCommand } from './commands/folder.js';
 
 const program = new Command();
 
@@ -29,6 +30,7 @@ program.addCommand(createInboxCommand());
 program.addCommand(createSearchCommand());
 program.addCommand(createPerspectiveCommand());
 program.addCommand(createTagCommand());
+program.addCommand(createFolderCommand());
 
 program.parseAsync().catch(() => {
   process.exit(1);

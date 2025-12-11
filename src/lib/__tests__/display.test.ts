@@ -27,6 +27,8 @@ describe('isTaskOverdue', () => {
     id: 'test-id',
     name: 'Test Task',
     completed: false,
+    dropped: false,
+    effectivelyActive: true,
     flagged: false,
     tags: [],
     note: null,

@@ -6,6 +6,7 @@ const PROJECT_STATUS_COLORS = {
   'active': chalk.green,
   'on hold': chalk.yellow,
   'dropped': chalk.red,
+  'done': chalk.gray,
 } as const;
 
 export function displaySuccessMessage(message: string): void {
@@ -326,6 +327,7 @@ export function displayProjectStats(stats: ProjectStats): void {
   displayMetric('Total Projects:', stats.totalProjects, chalk.bold);
   displayMetric('Active Projects:', stats.activeProjects, chalk.green);
   displayMetric('On Hold Projects:', stats.onHoldProjects, chalk.yellow);
+  displayMetric('Done Projects:', stats.doneProjects, chalk.gray);
   displayMetric('Dropped Projects:', stats.droppedProjects, chalk.red);
   displayMetric('Sequential Projects:', stats.sequentialProjects, chalk.blue);
   displayMetric('Parallel Projects:', stats.parallelProjects);
