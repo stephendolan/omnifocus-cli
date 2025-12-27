@@ -28,9 +28,9 @@ const execFileAsync = promisify(execFile);
 
 export class OmniFocus {
   private readonly PROJECT_STATUS_MAP = {
-    'active': 'Active',
+    active: 'Active',
     'on hold': 'OnHold',
-    'dropped': 'Dropped'
+    dropped: 'Dropped',
   } as const;
 
   private readonly OMNI_HELPERS = `
@@ -251,20 +251,18 @@ export class OmniFocus {
     try {
       await writeFile(tmpFile, script, 'utf-8');
 
-      const { stdout } = await execFileAsync(
-        'osascript',
-        ['-l', 'JavaScript', tmpFile],
-        {
-          timeout: timeoutMs,
-          maxBuffer: 10 * 1024 * 1024,
-        }
-      );
+      const { stdout } = await execFileAsync('osascript', ['-l', 'JavaScript', tmpFile], {
+        timeout: timeoutMs,
+        maxBuffer: 10 * 1024 * 1024,
+      });
 
       return stdout.trim();
     } finally {
       try {
         await unlink(tmpFile);
-      } catch { /* ignore cleanup errors */ }
+      } catch {
+        /* ignore cleanup errors */
+      }
     }
   }
 
@@ -321,15 +319,21 @@ export class OmniFocus {
     const conditions: string[] = [];
 
     if (!filters.includeDropped) {
-      conditions.push('if (project.status === Project.Status.Dropped || project.status === Project.Status.Done) continue;');
-      conditions.push('if (project.parentFolder && !project.parentFolder.effectiveActive) continue;');
+      conditions.push(
+        'if (project.status === Project.Status.Dropped || project.status === Project.Status.Done) continue;'
+      );
+      conditions.push(
+        'if (project.parentFolder && !project.parentFolder.effectiveActive) continue;'
+      );
     }
     if (filters.status) {
       const statusCheck = this.PROJECT_STATUS_MAP[filters.status];
       conditions.push(`if (project.status !== Project.Status.${statusCheck}) continue;`);
     }
     if (filters.folder) {
-      conditions.push(`if (!project.parentFolder || project.parentFolder.name !== "${this.escapeString(filters.folder)}") continue;`);
+      conditions.push(
+        `if (!project.parentFolder || project.parentFolder.name !== "${this.escapeString(filters.folder)}") continue;`
+      );
     }
 
     return conditions.join('\n    ');
@@ -354,15 +358,17 @@ export class OmniFocus {
       updates.push(`task.estimatedMinutes = ${options.estimatedMinutes};`);
     }
     if (options.defer !== undefined) {
-      updates.push(options.defer
-        ? `task.deferDate = new Date(${JSON.stringify(options.defer)});`
-        : 'task.deferDate = null;'
+      updates.push(
+        options.defer
+          ? `task.deferDate = new Date(${JSON.stringify(options.defer)});`
+          : 'task.deferDate = null;'
       );
     }
     if (options.due !== undefined) {
-      updates.push(options.due
-        ? `task.dueDate = new Date(${JSON.stringify(options.due)});`
-        : 'task.dueDate = null;'
+      updates.push(
+        options.due
+          ? `task.dueDate = new Date(${JSON.stringify(options.due)});`
+          : 'task.dueDate = null;'
       );
     }
     if (options.project !== undefined && options.project) {
@@ -440,10 +446,11 @@ export class OmniFocus {
     const omniScript = `
       ${this.OMNI_HELPERS}
       (() => {
-        ${options.project
-          ? `const targetProject = findByName(flattenedProjects, "${this.escapeString(options.project)}", "Project");
+        ${
+          options.project
+            ? `const targetProject = findByName(flattenedProjects, "${this.escapeString(options.project)}", "Project");
              const task = new Task("${this.escapeString(options.name)}", targetProject);`
-          : `const task = new Task("${this.escapeString(options.name)}");`
+            : `const task = new Task("${this.escapeString(options.name)}");`
         }
 
         ${options.note ? `task.note = "${this.escapeString(options.note)}";` : ''}
@@ -507,10 +514,11 @@ export class OmniFocus {
     const omniScript = `
       ${this.OMNI_HELPERS}
       (() => {
-        ${options.folder
-          ? `const targetFolder = findByName(flattenedFolders, "${this.escapeString(options.folder)}", "Folder");
+        ${
+          options.folder
+            ? `const targetFolder = findByName(flattenedFolders, "${this.escapeString(options.folder)}", "Folder");
              const project = new Project("${this.escapeString(options.name)}", targetFolder);`
-          : `const project = new Project("${this.escapeString(options.name)}");`
+            : `const project = new Project("${this.escapeString(options.name)}");`
         }
 
         ${options.note ? `project.note = "${this.escapeString(options.note)}";` : ''}
@@ -706,14 +714,18 @@ export class OmniFocus {
           results.push(serialized);
         }
 
-        ${options.unusedDays ? `
+        ${
+          options.unusedDays
+            ? `
           const cutoffDate = new Date(now.getTime() - (${options.unusedDays} * 24 * 60 * 60 * 1000));
           const filtered = results.filter(tag => {
             if (!tag.lastActivity) return true;
             return new Date(tag.lastActivity) < cutoffDate;
           });
           return JSON.stringify(filtered);
-        ` : 'return JSON.stringify(results);'}
+        `
+            : 'return JSON.stringify(results);'
+        }
       })();
     `;
 
@@ -732,7 +744,7 @@ export class OmniFocus {
         if (!b.lastActivity) return -1;
         return new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime();
       },
-      name: (a, b) => a.name.localeCompare(b.name)
+      name: (a, b) => a.name.localeCompare(b.name),
     };
 
     return tags.sort(sortFns[sortBy] || sortFns.name);
@@ -791,10 +803,11 @@ export class OmniFocus {
     const omniScript = `
       ${this.OMNI_HELPERS}
       (() => {
-        ${options.parent
-          ? `const parentTag = findTag("${this.escapeString(options.parent)}");
+        ${
+          options.parent
+            ? `const parentTag = findTag("${this.escapeString(options.parent)}");
              const tag = new Tag("${this.escapeString(options.name)}", parentTag);`
-          : `const tag = new Tag("${this.escapeString(options.name)}", tags.beginning);`
+            : `const tag = new Tag("${this.escapeString(options.name)}", tags.beginning);`
         }
 
         ${options.status ? `tag.status = stringToTagStatus("${options.status}");` : ''}

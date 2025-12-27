@@ -10,9 +10,7 @@ export function setOutputOptions(options: OutputOptions): void {
 
 export function outputJson(data: unknown, options: OutputOptions = {}): void {
   const mergedOptions = { ...globalOutputOptions, ...options };
-  const jsonString = mergedOptions.compact
-    ? JSON.stringify(data)
-    : JSON.stringify(data, null, 2);
+  const jsonString = mergedOptions.compact ? JSON.stringify(data) : JSON.stringify(data, null, 2);
 
   console.log(jsonString);
 }

@@ -46,16 +46,17 @@ export function createTaskCommand(): Command {
     .action(async (name, options) => {
       await executeOmniFocusCommand(
         'Creating task...',
-        (of) => of.createTask({
-          name,
-          note: options.note,
-          project: options.project,
-          tags: options.tag,
-          due: options.due,
-          defer: options.defer,
-          flagged: options.flagged,
-          estimatedMinutes: options.estimate,
-        }),
+        (of) =>
+          of.createTask({
+            name,
+            note: options.note,
+            project: options.project,
+            tags: options.tag,
+            due: options.due,
+            defer: options.defer,
+            flagged: options.flagged,
+            estimatedMinutes: options.estimate,
+          }),
         (task) => outputJson(task),
         'Failed to create task'
       );

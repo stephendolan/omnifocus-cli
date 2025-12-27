@@ -15,7 +15,7 @@ const program = new Command();
 program
   .name('of')
   .description('A command-line interface for OmniFocus on macOS')
-  .version('1.0.0')
+  .version(__VERSION__)
   .option('-c, --compact', 'Minified JSON output (single line)')
   .hook('preAction', (thisCommand) => {
     const options = thisCommand.opts();

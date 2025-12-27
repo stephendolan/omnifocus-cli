@@ -42,14 +42,15 @@ export function createProjectCommand(): Command {
     .action(async (name, options) => {
       await executeOmniFocusCommand(
         'Creating project...',
-        (of) => of.createProject({
-          name,
-          note: options.note,
-          folder: options.folder,
-          tags: options.tag,
-          sequential: options.sequential,
-          status: options.status,
-        }),
+        (of) =>
+          of.createProject({
+            name,
+            note: options.note,
+            folder: options.folder,
+            tags: options.tag,
+            sequential: options.sequential,
+            status: options.status,
+          }),
         (project) => outputJson(project),
         'Failed to create project'
       );

@@ -17,11 +17,12 @@ export function createTagCommand(): Command {
     .action(async (options) => {
       await executeOmniFocusCommand(
         'Loading tags...',
-        (of) => of.listTags({
-          unusedDays: options.unusedDays,
-          sortBy: options.sort,
-          activeOnly: options.activeOnly,
-        }),
+        (of) =>
+          of.listTags({
+            unusedDays: options.unusedDays,
+            sortBy: options.sort,
+            activeOnly: options.activeOnly,
+          }),
         (tags) => outputJson(tags),
         'Failed to load tags'
       );
@@ -35,11 +36,12 @@ export function createTagCommand(): Command {
     .action(async (name, options) => {
       await executeOmniFocusCommand(
         'Creating tag...',
-        (of) => of.createTag({
-          name,
-          parent: options.parent,
-          status: options.status,
-        }),
+        (of) =>
+          of.createTag({
+            name,
+            parent: options.parent,
+            status: options.status,
+          }),
         (tag) => outputJson(tag),
         'Failed to create tag'
       );
