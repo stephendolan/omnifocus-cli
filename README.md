@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/@stephendolan/omnifocus-cli.svg)](https://www.npmjs.com/package/@stephendolan/omnifocus-cli)
 [![npm downloads](https://img.shields.io/npm/dm/@stephendolan/omnifocus-cli.svg)](https://www.npmjs.com/package/@stephendolan/omnifocus-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node.js Version](https://img.shields.io/node/v/@stephendolan/omnifocus-cli.svg)](https://nodejs.org)
+[![Bun](https://img.shields.io/badge/Bun-%3E%3D1.0-black)](https://bun.sh)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://www.apple.com/macos/)
 
 A powerful command-line interface for OmniFocus on macOS, inspired by the GitHub CLI (`gh`).
@@ -20,12 +20,15 @@ A powerful command-line interface for OmniFocus on macOS, inspired by the GitHub
 
 ## Installation
 
+Requires [Bun](https://bun.sh) runtime.
+
 ```bash
-# Install globally
-npm install -g @stephendolan/omnifocus-cli
+# Install globally with bun (recommended)
+bun install -g @stephendolan/omnifocus-cli
 
 # Or run directly without installing
-npx @stephendolan/omnifocus-cli task list
+bunx @stephendolan/omnifocus-cli task list
+npx @stephendolan/omnifocus-cli task list  # also works
 ```
 
 ### From Source
@@ -33,8 +36,8 @@ npx @stephendolan/omnifocus-cli task list
 ```bash
 git clone https://github.com/stephendolan/omnifocus-cli.git
 cd omnifocus-cli
-npm install
-npm run link  # Build and link globally
+bun install
+bun run link  # Build and link globally
 ```
 
 Now you can use the `of` command anywhere in your terminal.
@@ -450,7 +453,7 @@ of tag delete "Obsolete Tag"
 
 - macOS (OmniFocus is Mac-only)
 - OmniFocus installed and running
-- Node.js 18+
+- [Bun](https://bun.sh) 1.0+
 
 ## How It Works
 
@@ -460,16 +463,16 @@ The CLI uses JavaScript for Automation (JXA) to communicate directly with OmniFo
 
 ```bash
 # Install dependencies
-npm install
+bun install
 
 # Build TypeScript
-npm run build
+bun run build
 
 # Watch mode for development
-npm run dev
+bun run dev
 
 # Link for local testing
-npm link
+bun link
 ```
 
 ## Troubleshooting

@@ -10,14 +10,14 @@ A CLI tool for OmniFocus on macOS that uses JavaScript for Automation (JXA) to i
 
 ### Development Workflow
 ```bash
-npm install                    # Install dependencies
-npm run build                  # Build TypeScript to dist/
-npm run dev                    # Watch mode for development
-npm link                       # Link binary for local testing (creates `of` command)
+bun install                    # Install dependencies
+bun run build                  # Build TypeScript to dist/
+bun run dev                    # Watch mode for development
+bun link                       # Link binary for local testing (creates `of` command)
 ```
 
 ### Testing the CLI
-After `npm link`, use `of` command globally:
+After `bun link`, use `of` command globally:
 ```bash
 of task list                   # List tasks
 of project list                # List projects
