@@ -1,16 +1,16 @@
 {
   "name": "@stephendolan/omnifocus-cli",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "A command-line interface for OmniFocus on macOS",
-  "main": "dist/index.js",
+  "main": "dist/cli.js",
   "type": "module",
   "bin": {
-    "of": "dist/index.js"
+    "of": "dist/cli.js"
   },
   "scripts": {
     "build": "bun run tsup",
-    "dev": "bun run src/index.ts",
-    "start": "bun dist/index.js",
+    "dev": "bun run src/cli.ts",
+    "start": "bun dist/cli.js",
     "lint": "bun run oxlint src",
     "format": "bun run biome format --write src",
     "format:check": "bun run biome format src",
@@ -48,16 +48,14 @@
     "bun": ">=1.0.0"
   },
   "dependencies": {
-    "chalk": "^5.3.0",
     "commander": "^12.1.0",
-    "ora": "^8.1.1"
+    "dayjs": "^1.11.19"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "@types/node": "^22.10.2",
     "oxlint": "^0.16.0",
     "tsup": "^8.0.0",
-    "tsx": "^4.7.0",
     "typescript": "^5.7.2",
     "vitest": "^4.0.14"
   }
