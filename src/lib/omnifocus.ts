@@ -352,7 +352,7 @@ export class OmniFocus {
       updates.push(`task.flagged = ${options.flagged};`);
     }
     if (options.completed !== undefined) {
-      updates.push(`task.completed = ${options.completed};`);
+      updates.push(options.completed ? 'task.markComplete();' : 'task.markIncomplete();');
     }
     if (options.estimatedMinutes !== undefined) {
       updates.push(`task.estimatedMinutes = ${options.estimatedMinutes};`);
