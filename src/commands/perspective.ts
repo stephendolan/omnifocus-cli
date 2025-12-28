@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { outputJson } from '../lib/output.js';
-import { executeOmniFocusCommand } from '../lib/command-utils.js';
+import { withErrorHandling } from '../lib/command-utils.js';
+import { OmniFocus } from '../lib/omnifocus.js';
 
 export function createPerspectiveCommand(): Command {
   const command = new Command('perspective');
@@ -10,26 +11,24 @@ export function createPerspectiveCommand(): Command {
     .command('list')
     .alias('ls')
     .description('List all perspectives')
-    .action(async () => {
-      await executeOmniFocusCommand(
-        'Loading perspectives...',
-        (of) => of.listPerspectives(),
-        (perspectives) => outputJson(perspectives),
-        'Failed to load perspectives'
-      );
-    });
+    .action(
+      withErrorHandling(async () => {
+        const of = new OmniFocus();
+        const perspectives = await of.listPerspectives();
+        outputJson(perspectives);
+      })
+    );
 
   command
     .command('view <name>')
     .description('View tasks in a perspective')
-    .action(async (name) => {
-      await executeOmniFocusCommand(
-        `Loading perspective "${name}"...`,
-        (of) => of.getPerspectiveTasks(name),
-        (tasks) => outputJson(tasks),
-        'Failed to load perspective'
-      );
-    });
+    .action(
+      withErrorHandling(async (name) => {
+        const of = new OmniFocus();
+        const tasks = await of.getPerspectiveTasks(name);
+        outputJson(tasks);
+      })
+    );
 
   return command;
 }

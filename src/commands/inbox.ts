@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { outputJson } from '../lib/output.js';
-import { executeOmniFocusCommand } from '../lib/command-utils.js';
+import { withErrorHandling } from '../lib/command-utils.js';
+import { OmniFocus } from '../lib/omnifocus.js';
 
 export function createInboxCommand(): Command {
   const command = new Command('inbox');
@@ -10,26 +11,24 @@ export function createInboxCommand(): Command {
     .command('list')
     .alias('ls')
     .description('List inbox tasks')
-    .action(async () => {
-      await executeOmniFocusCommand(
-        'Loading inbox...',
-        (of) => of.listInboxTasks(),
-        (tasks) => outputJson(tasks),
-        'Failed to load inbox'
-      );
-    });
+    .action(
+      withErrorHandling(async () => {
+        const of = new OmniFocus();
+        const tasks = await of.listInboxTasks();
+        outputJson(tasks);
+      })
+    );
 
   command
     .command('count')
     .description('Get inbox count')
-    .action(async () => {
-      await executeOmniFocusCommand(
-        'Counting inbox items...',
-        (of) => of.getInboxCount(),
-        (count) => outputJson({ count }),
-        'Failed to get inbox count'
-      );
-    });
+    .action(
+      withErrorHandling(async () => {
+        const of = new OmniFocus();
+        const count = await of.getInboxCount();
+        outputJson({ count });
+      })
+    );
 
   return command;
 }

@@ -43,7 +43,7 @@ Commands follow Commander.js patterns:
 - All commands output JSON for machine-readable automation
 
 Files:
-- `src/index.ts` - Main entry point, registers all commands
+- `src/cli.ts` - Main entry point, registers all commands
 - `src/commands/task.ts` - Task CRUD operations
 - `src/commands/project.ts` - Project CRUD operations
 - `src/commands/inbox.ts` - Inbox list/count
@@ -73,10 +73,10 @@ Core types in `src/types.ts`:
 5. Parse JSON output from serialized OmniFocus objects
 
 ### Error Handling
-Commands use `executeOmniFocusCommand()` which:
-- Shows loading spinner during execution
-- Catches errors and outputs error messages to stderr
+Commands use `withErrorHandling()` HOF which:
+- Catches errors and outputs JSON error objects to stdout
 - Calls `process.exit(1)` on failure
+- Error format: `{"error": {"name": "...", "detail": "...", "statusCode": ...}}`
 - OmniFocus API errors (like "Task not found") bubble up from JXA execution
 
 ### Perspective Tasks

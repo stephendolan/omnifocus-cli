@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { outputJson } from '../lib/output.js';
-import { executeOmniFocusCommand } from '../lib/command-utils.js';
+import { withErrorHandling } from '../lib/command-utils.js';
+import { OmniFocus } from '../lib/omnifocus.js';
 import type { ProjectFilters, UpdateProjectOptions } from '../types.js';
 
 export function createProjectCommand(): Command {
@@ -14,22 +15,18 @@ export function createProjectCommand(): Command {
     .option('-f, --folder <name>', 'Filter by folder')
     .option('-s, --status <status>', 'Filter by status (active, on hold, dropped)')
     .option('-d, --dropped', 'Include dropped projects')
-    .action(async (options) => {
-      await executeOmniFocusCommand(
-        'Loading projects...',
-        (of) => {
-          const filters: ProjectFilters = {
-            includeDropped: options.dropped,
-            ...(options.folder && { folder: options.folder }),
-            ...(options.status && { status: options.status }),
-          };
-
-          return of.listProjects(filters);
-        },
-        (projects) => outputJson(projects),
-        'Failed to load projects'
-      );
-    });
+    .action(
+      withErrorHandling(async (options) => {
+        const of = new OmniFocus();
+        const filters: ProjectFilters = {
+          includeDropped: options.dropped,
+          ...(options.folder && { folder: options.folder }),
+          ...(options.status && { status: options.status }),
+        };
+        const projects = await of.listProjects(filters);
+        outputJson(projects);
+      })
+    );
 
   command
     .command('create <name>')
@@ -39,22 +36,20 @@ export function createProjectCommand(): Command {
     .option('-t, --tag <tags...>', 'Add tags')
     .option('-s, --sequential', 'Make it a sequential project')
     .option('--status <status>', 'Set status (active, on hold, dropped)')
-    .action(async (name, options) => {
-      await executeOmniFocusCommand(
-        'Creating project...',
-        (of) =>
-          of.createProject({
-            name,
-            note: options.note,
-            folder: options.folder,
-            tags: options.tag,
-            sequential: options.sequential,
-            status: options.status,
-          }),
-        (project) => outputJson(project),
-        'Failed to create project'
-      );
-    });
+    .action(
+      withErrorHandling(async (name, options) => {
+        const of = new OmniFocus();
+        const project = await of.createProject({
+          name,
+          note: options.note,
+          folder: options.folder,
+          tags: options.tag,
+          sequential: options.sequential,
+          status: options.status,
+        });
+        outputJson(project);
+      })
+    );
 
   command
     .command('update <idOrName>')
@@ -66,63 +61,56 @@ export function createProjectCommand(): Command {
     .option('-s, --sequential', 'Make it sequential')
     .option('-p, --parallel', 'Make it parallel')
     .option('--status <status>', 'Set status (active, on hold, dropped)')
-    .action(async (idOrName, options) => {
-      await executeOmniFocusCommand(
-        'Updating project...',
-        (of) => {
-          const updates: UpdateProjectOptions = {
-            ...(options.name && { name: options.name }),
-            ...(options.note !== undefined && { note: options.note }),
-            ...(options.folder && { folder: options.folder }),
-            ...(options.tag && { tags: options.tag }),
-            ...(options.sequential && { sequential: true }),
-            ...(options.parallel && { sequential: false }),
-            ...(options.status && { status: options.status }),
-          };
-
-          return of.updateProject(idOrName, updates);
-        },
-        (project) => outputJson(project),
-        'Failed to update project'
-      );
-    });
+    .action(
+      withErrorHandling(async (idOrName, options) => {
+        const of = new OmniFocus();
+        const updates: UpdateProjectOptions = {
+          ...(options.name && { name: options.name }),
+          ...(options.note !== undefined && { note: options.note }),
+          ...(options.folder && { folder: options.folder }),
+          ...(options.tag && { tags: options.tag }),
+          ...(options.sequential && { sequential: true }),
+          ...(options.parallel && { sequential: false }),
+          ...(options.status && { status: options.status }),
+        };
+        const project = await of.updateProject(idOrName, updates);
+        outputJson(project);
+      })
+    );
 
   command
     .command('delete <idOrName>')
     .alias('rm')
     .description('Delete a project')
-    .action(async (idOrName) => {
-      await executeOmniFocusCommand(
-        'Deleting project...',
-        (of) => of.deleteProject(idOrName),
-        () => outputJson({ message: 'Project deleted successfully' }),
-        'Failed to delete project'
-      );
-    });
+    .action(
+      withErrorHandling(async (idOrName) => {
+        const of = new OmniFocus();
+        await of.deleteProject(idOrName);
+        outputJson({ message: 'Project deleted successfully' });
+      })
+    );
 
   command
     .command('view <idOrName>')
     .description('View project details')
-    .action(async (idOrName) => {
-      await executeOmniFocusCommand(
-        'Loading project...',
-        (of) => of.getProject(idOrName),
-        (project) => outputJson(project),
-        'Failed to load project'
-      );
-    });
+    .action(
+      withErrorHandling(async (idOrName) => {
+        const of = new OmniFocus();
+        const project = await of.getProject(idOrName);
+        outputJson(project);
+      })
+    );
 
   command
     .command('stats')
     .description('Show project statistics')
-    .action(async () => {
-      await executeOmniFocusCommand(
-        'Analyzing projects...',
-        (of) => of.getProjectStats(),
-        (stats) => outputJson(stats),
-        'Failed to analyze projects'
-      );
-    });
+    .action(
+      withErrorHandling(async () => {
+        const of = new OmniFocus();
+        const stats = await of.getProjectStats();
+        outputJson(stats);
+      })
+    );
 
   return command;
 }

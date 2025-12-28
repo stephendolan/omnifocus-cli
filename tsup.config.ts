@@ -2,7 +2,7 @@ import { defineConfig } from 'tsup';
 import packageJson from './package.json' with { type: 'json' };
 
 export default defineConfig({
-  entry: ['src/index.ts'],
+  entry: ['src/cli.ts'],
   format: ['esm'],
   target: 'node18',
   clean: true,
