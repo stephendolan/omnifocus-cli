@@ -17,7 +17,7 @@ Requires [Bun](https://bun.sh) and macOS with OmniFocus installed.
 
 ```bash
 of inbox count                              # Check inbox
-of task list --flagged                      # Today's tasks
+of task list --flagged                      # Flagged tasks
 of task create "Buy groceries"              # Quick capture
 of task update "Buy groceries" --complete   # Mark done
 ```
@@ -90,12 +90,49 @@ of tag update <name> --inactive     # Deactivate
 of tag delete <name>                # Delete tag
 ```
 
-### Other
+### Inbox
 
 ```bash
 of inbox list                       # List inbox items
 of inbox count                      # Inbox count
+of inbox add "Task name"            # Add task to inbox
+```
+
+### Perspectives
+
+```bash
+of perspective list                 # List all perspectives
+of perspective view "Forecast"      # View tasks in perspective
+```
+
+### Folders
+
+```bash
+of folder list                      # List all folders
+of folder list --dropped            # Include dropped
+of folder view "Work"               # View folder details
+```
+
+### Statistics
+
+```bash
+of task stats                       # Task statistics
+of project stats                    # Project statistics
+of tag stats                        # Tag statistics
+```
+
+### Other
+
+```bash
 of search "query"                   # Search tasks
+```
+
+### MCP Server
+
+Run as an MCP server for AI agent integration:
+
+```bash
+of mcp
 ```
 
 ## JSON Output
