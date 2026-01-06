@@ -1,6 +1,6 @@
 {
   "name": "@stephendolan/omnifocus-cli",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "description": "A command-line interface for OmniFocus on macOS",
   "main": "dist/cli.js",
   "type": "module",
@@ -55,7 +55,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
-    "@types/node": "^22.10.2",
+    "@types/bun": "latest",
     "oxlint": "^0.16.0",
     "tsup": "^8.0.0",
     "typescript": "^5.7.2",
