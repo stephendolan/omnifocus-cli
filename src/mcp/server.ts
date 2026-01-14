@@ -3,6 +3,34 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { OmniFocus } from '../lib/omnifocus.js';
 
+const toolRegistry = [
+  { name: 'list_tasks', description: 'List tasks with optional filtering' },
+  { name: 'get_task', description: 'Get a specific task by ID or name' },
+  { name: 'create_task', description: 'Create a new task' },
+  { name: 'update_task', description: 'Update an existing task' },
+  { name: 'delete_task', description: 'Delete a task' },
+  { name: 'search_tasks', description: 'Search tasks by name or note content' },
+  { name: 'get_task_stats', description: 'Get task statistics' },
+  { name: 'list_inbox', description: 'List all inbox tasks' },
+  { name: 'get_inbox_count', description: 'Get the number of inbox tasks' },
+  { name: 'list_projects', description: 'List projects with optional filtering' },
+  { name: 'get_project', description: 'Get a specific project by ID or name' },
+  { name: 'create_project', description: 'Create a new project' },
+  { name: 'update_project', description: 'Update an existing project' },
+  { name: 'delete_project', description: 'Delete a project' },
+  { name: 'get_project_stats', description: 'Get project statistics' },
+  { name: 'list_perspectives', description: 'List all available perspectives' },
+  { name: 'get_perspective_tasks', description: 'Get tasks from a specific perspective' },
+  { name: 'list_tags', description: 'List all tags with optional filtering and sorting' },
+  { name: 'get_tag', description: 'Get a specific tag by ID or name' },
+  { name: 'create_tag', description: 'Create a new tag' },
+  { name: 'update_tag', description: 'Update an existing tag' },
+  { name: 'delete_tag', description: 'Delete a tag' },
+  { name: 'get_tag_stats', description: 'Get tag statistics' },
+  { name: 'list_folders', description: 'List all folders' },
+  { name: 'get_folder', description: 'Get a specific folder by ID or name' },
+];
+
 const server = new McpServer({
   name: 'omnifocus',
   version: '1.0.0',
@@ -85,25 +113,12 @@ server.tool(
   async ({ query }) => jsonResponse(await of.searchTasks(query))
 );
 
-server.tool(
-  'get_task_stats',
-  'Get task statistics',
-  {},
-  async () => jsonResponse(await of.getTaskStats())
-);
+server.tool('get_task_stats', 'Get task statistics', {}, async () => jsonResponse(await of.getTaskStats()));
 
-server.tool(
-  'list_inbox',
-  'List all inbox tasks',
-  {},
-  async () => jsonResponse(await of.listInboxTasks())
-);
+server.tool('list_inbox', 'List all inbox tasks', {}, async () => jsonResponse(await of.listInboxTasks()));
 
-server.tool(
-  'get_inbox_count',
-  'Get the number of inbox tasks',
-  {},
-  async () => jsonResponse({ count: await of.getInboxCount() })
+server.tool('get_inbox_count', 'Get the number of inbox tasks', {}, async () =>
+  jsonResponse({ count: await of.getInboxCount() })
 );
 
 server.tool(
@@ -163,18 +178,10 @@ server.tool(
   }
 );
 
-server.tool(
-  'get_project_stats',
-  'Get project statistics',
-  {},
-  async () => jsonResponse(await of.getProjectStats())
-);
+server.tool('get_project_stats', 'Get project statistics', {}, async () => jsonResponse(await of.getProjectStats()));
 
-server.tool(
-  'list_perspectives',
-  'List all available perspectives',
-  {},
-  async () => jsonResponse(await of.listPerspectives())
+server.tool('list_perspectives', 'List all available perspectives', {}, async () =>
+  jsonResponse(await of.listPerspectives())
 );
 
 server.tool(
@@ -234,12 +241,7 @@ server.tool(
   }
 );
 
-server.tool(
-  'get_tag_stats',
-  'Get tag statistics',
-  {},
-  async () => jsonResponse(await of.getTagStats())
-);
+server.tool('get_tag_stats', 'Get tag statistics', {}, async () => jsonResponse(await of.getTagStats()));
 
 server.tool(
   'list_folders',
@@ -256,6 +258,23 @@ server.tool(
     includeDropped: z.boolean().optional().describe('Include dropped children'),
   },
   async ({ idOrName, includeDropped }) => jsonResponse(await of.getFolder(idOrName, { includeDropped }))
+);
+
+server.tool(
+  'search_tools',
+  'Search for available tools by name or description using regex. Returns matching tool names.',
+  {
+    query: z.string().describe('Regex pattern to match against tool names and descriptions (case-insensitive)'),
+  },
+  async ({ query }) => {
+    try {
+      const pattern = new RegExp(query, 'i');
+      const matches = toolRegistry.filter((t) => pattern.test(t.name) || pattern.test(t.description));
+      return jsonResponse({ tools: matches });
+    } catch {
+      return jsonResponse({ error: 'Invalid regex pattern' });
+    }
+  }
 );
 
 export async function runMcpServer() {
