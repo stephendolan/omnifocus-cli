@@ -52,40 +52,40 @@ export function outputJson(data: unknown, options: OutputOptions = {}): void {
 
 // ── type guards ──
 
-function isRecord(data: unknown): data is Record<string, unknown> {
+export function isRecord(data: unknown): data is Record<string, unknown> {
   return typeof data === 'object' && data !== null && !Array.isArray(data);
 }
 
-function isTask(item: unknown): item is Task {
+export function isTask(item: unknown): item is Task {
   return isRecord(item) && 'id' in item && 'name' in item && 'completed' in item && 'flagged' in item;
 }
 
-function isProject(item: unknown): item is Project {
+export function isProject(item: unknown): item is Project {
   return isRecord(item) && 'id' in item && 'name' in item && 'sequential' in item && 'taskCount' in item;
 }
 
-function isTag(item: unknown): item is Tag {
+export function isTag(item: unknown): item is Tag {
   return isRecord(item) && 'id' in item && 'name' in item && 'taskCount' in item && 'allowsNextAction' in item;
 }
 
-function isFolder(item: unknown): item is Folder {
+export function isFolder(item: unknown): item is Folder {
   return isRecord(item) && 'id' in item && 'name' in item && 'projectCount' in item;
 }
 
-function isPerspective(item: unknown): item is Perspective {
+export function isPerspective(item: unknown): item is Perspective {
   return isRecord(item) && 'id' in item && 'name' in item && Object.keys(item as object).length === 2;
 }
 
 // ── table rendering ──
 
 /** Pad or truncate a string to fit a column width. */
-function pad(str: string, width: number): string {
+export function pad(str: string, width: number): string {
   if (str.length > width) return str.slice(0, width - 1) + '…';
   return str.padEnd(width);
 }
 
 /** Format a relative date string like "3d ago", "2mo ago", "1y ago". */
-function relativeDate(isoStr: string | null): string {
+export function relativeDate(isoStr: string | null): string {
   if (!isoStr) return '-';
   const diff = Date.now() - new Date(isoStr).getTime();
   const days = Math.floor(diff / (1000 * 60 * 60 * 24));
@@ -102,7 +102,7 @@ function relativeDate(isoStr: string | null): string {
 }
 
 /** Format a short date like "2024-08-01". */
-function shortDate(isoStr: string | null): string {
+export function shortDate(isoStr: string | null): string {
   if (!isoStr) return '-';
   return isoStr.slice(0, 10);
 }
@@ -111,7 +111,7 @@ function shortDate(isoStr: string | null): string {
  * Render a simple table from rows of strings.
  * First row is treated as the header.
  */
-function renderTable(headers: string[], rows: string[][]): string {
+export function renderTable(headers: string[], rows: string[][]): string {
   const widths = headers.map((h, i) => {
     const maxDataWidth = rows.reduce((max, row) => Math.max(max, (row[i] || '').length), 0);
     return Math.max(h.length, maxDataWidth);
@@ -128,7 +128,7 @@ function renderTable(headers: string[], rows: string[][]): string {
 
 // ── formatters for specific data types ──
 
-function formatTaskTable(tasks: Task[]): string {
+export function formatTaskTable(tasks: Task[]): string {
   if (tasks.length === 0) return 'No tasks found.';
 
   const headers = ['FLAG', 'NAME', 'PROJECT', 'TAGS', 'DUE', 'ADDED'];
@@ -144,7 +144,7 @@ function formatTaskTable(tasks: Task[]): string {
   return `${renderTable(headers, rows)}\n${tasks.length} tasks`;
 }
 
-function formatProjectTable(projects: Project[]): string {
+export function formatProjectTable(projects: Project[]): string {
   if (projects.length === 0) return 'No projects found.';
 
   const headers = ['NAME', 'STATUS', 'FOLDER', 'REMAINING', 'TOTAL', 'TAGS'];
@@ -160,7 +160,7 @@ function formatProjectTable(projects: Project[]): string {
   return `${renderTable(headers, rows)}\n${projects.length} projects`;
 }
 
-function formatTagTable(tags: Tag[]): string {
+export function formatTagTable(tags: Tag[]): string {
   if (tags.length === 0) return 'No tags found.';
 
   const headers = ['NAME', 'TASKS', 'REMAINING', 'STATUS', 'PARENT', 'LAST ACTIVITY'];
@@ -176,7 +176,7 @@ function formatTagTable(tags: Tag[]): string {
   return `${renderTable(headers, rows)}\n${tags.length} tags`;
 }
 
-function formatFolderTable(folders: Folder[]): string {
+export function formatFolderTable(folders: Folder[]): string {
   if (folders.length === 0) return 'No folders found.';
 
   const headers = ['NAME', 'STATUS', 'PROJECTS', 'ACTIVE PROJECTS'];
@@ -199,7 +199,7 @@ function formatFolderTable(folders: Folder[]): string {
   return `${renderTable(headers, result)}\n${folders.length} top-level folders`;
 }
 
-function formatPerspectiveTable(perspectives: Perspective[]): string {
+export function formatPerspectiveTable(perspectives: Perspective[]): string {
   if (perspectives.length === 0) return 'No perspectives found.';
 
   const headers = ['NAME'];
@@ -210,7 +210,7 @@ function formatPerspectiveTable(perspectives: Perspective[]): string {
 
 // ── stats formatters ──
 
-function formatKeyValue(obj: Record<string, unknown>, indent = 0): string {
+export function formatKeyValue(obj: Record<string, unknown>, indent = 0): string {
   const prefix = '  '.repeat(indent);
   const lines: string[] = [];
 
