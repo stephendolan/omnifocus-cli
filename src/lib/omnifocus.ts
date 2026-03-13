@@ -509,6 +509,52 @@ export class OmniFocus {
     await this.executeJXA(this.wrapOmniScript(omniScript));
   }
 
+  /**
+   * Complete multiple tasks in a single JXA invocation.
+   * Returns the list of tasks that were completed.
+   */
+  async completeTasks(idsOrNames: string[]): Promise<Task[]> {
+    const escaped = idsOrNames.map(id => `"${this.escapeString(id)}"`);
+    const omniScript = `
+      ${this.OMNI_HELPERS}
+      (() => {
+        const ids = [${escaped.join(', ')}];
+        const results = [];
+        for (const id of ids) {
+          const task = findTask(id);
+          task.markComplete();
+          results.push(serializeTask(task));
+        }
+        return JSON.stringify(results);
+      })();
+    `;
+
+    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
+    return JSON.parse(output);
+  }
+
+  /**
+   * Delete multiple tasks in a single JXA invocation.
+   * Returns the count of deleted tasks.
+   */
+  async deleteTasks(idsOrNames: string[]): Promise<number> {
+    const escaped = idsOrNames.map(id => `"${this.escapeString(id)}"`);
+    const omniScript = `
+      ${this.OMNI_HELPERS}
+      (() => {
+        const ids = [${escaped.join(', ')}];
+        const tasks = ids.map(id => findTask(id));
+        for (const task of tasks) {
+          deleteObject(task);
+        }
+        return JSON.stringify(tasks.length);
+      })();
+    `;
+
+    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
+    return JSON.parse(output);
+  }
+
   async listProjects(filters: ProjectFilters = {}): Promise<Project[]> {
     const filterCode = this.buildProjectFilters(filters);
     const omniScript = `
