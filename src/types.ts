@@ -10,6 +10,7 @@ export interface Task {
   tags: string[];
   defer: string | null;
   due: string | null;
+  planned: string | null;
   estimatedMinutes: number | null;
   completionDate: string | null;
   added: string | null;
@@ -49,6 +50,7 @@ export interface CreateTaskOptions {
   tags?: string[];
   defer?: string;
   due?: string;
+  planned?: string;
   flagged?: boolean;
   estimatedMinutes?: number;
 }
@@ -58,8 +60,9 @@ export interface UpdateTaskOptions {
   note?: string;
   project?: string;
   tags?: string[];
-  defer?: string;
-  due?: string;
+  defer?: string | null;
+  due?: string | null;
+  planned?: string | null;
   flagged?: boolean;
   estimatedMinutes?: number;
   completed?: boolean;
