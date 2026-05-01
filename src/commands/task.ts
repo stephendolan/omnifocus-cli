@@ -98,14 +98,31 @@ export function createTaskCommand(): Command {
     );
 
   command
-    .command('delete <idOrName>')
-    .alias('rm')
-    .description('Delete a task')
+    .command('complete <idsOrNames...>')
+    .alias('done')
+    .description('Mark one or more tasks as completed')
     .action(
-      withErrorHandling(async (idOrName) => {
+      withErrorHandling(async (idsOrNames: string[]) => {
         const of = new OmniFocus();
-        await of.deleteTask(idOrName);
-        outputJson({ message: 'Task deleted successfully' });
+        const tasks = await of.completeTasks(idsOrNames);
+        outputJson(tasks);
+      })
+    );
+
+  command
+    .command('delete <idsOrNames...>')
+    .alias('rm')
+    .description('Delete one or more tasks')
+    .action(
+      withErrorHandling(async (idsOrNames: string[]) => {
+        const of = new OmniFocus();
+        if (idsOrNames.length === 1) {
+          await of.deleteTask(idsOrNames[0]);
+          outputJson({ message: 'Task deleted successfully' });
+        } else {
+          const count = await of.deleteTasks(idsOrNames);
+          outputJson({ message: `${count} tasks deleted successfully` });
+        }
       })
     );
 

@@ -18,10 +18,12 @@ program
   .description('A command-line interface for OmniFocus on macOS')
   .version(__VERSION__)
   .option('-c, --compact', 'Minified JSON output (single line)')
+  .option('-j, --json', 'Force JSON output (default when piped)')
   .hook('preAction', (thisCommand) => {
     const options = thisCommand.opts();
     setOutputOptions({
       compact: options.compact,
+      json: options.json,
     });
   });
 

@@ -1,8 +1,4 @@
-import { execFile } from 'child_process';
-import { writeFile, unlink } from 'fs/promises';
-import { tmpdir } from 'os';
-import { join } from 'path';
-import { promisify } from 'util';
+import { spawn } from 'child_process';
 import type {
   Task,
   Project,
@@ -23,8 +19,6 @@ import type {
   Folder,
   FolderFilters,
 } from '../types.js';
-
-const execFileAsync = promisify(execFile);
 
 export class OmniFocus {
   private readonly PROJECT_STATUS_MAP = {
@@ -245,25 +239,47 @@ export class OmniFocus {
     }
   `;
 
-  private async executeJXA(script: string, timeoutMs = 30000): Promise<string> {
-    const tmpFile = join(tmpdir(), `omnifocus-${Date.now()}.js`);
-
-    try {
-      await writeFile(tmpFile, script, 'utf-8');
-
-      const { stdout } = await execFileAsync('osascript', ['-l', 'JavaScript', tmpFile], {
-        timeout: timeoutMs,
-        maxBuffer: 10 * 1024 * 1024,
+  /**
+   * Execute a JXA script via osascript using stdin pipe.
+   * Avoids temp file creation/deletion overhead on every invocation.
+   */
+  private executeJXA(script: string, timeoutMs = 30000): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const proc = spawn('osascript', ['-l', 'JavaScript', '-'], {
+        stdio: ['pipe', 'pipe', 'pipe'],
       });
 
-      return stdout.trim();
-    } finally {
-      try {
-        await unlink(tmpFile);
-      } catch {
-        /* ignore cleanup errors */
-      }
-    }
+      let stdout = '';
+      let stderr = '';
+      let timedOut = false;
+
+      const timer = setTimeout(() => {
+        timedOut = true;
+        proc.kill();
+        reject(new Error(`osascript timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      proc.stdout.on('data', (data: Buffer) => { stdout += data; });
+      proc.stderr.on('data', (data: Buffer) => { stderr += data; });
+
+      proc.on('close', (code) => {
+        clearTimeout(timer);
+        if (timedOut) return;
+        if (code !== 0) {
+          reject(new Error(stderr.trim() || `osascript exited with code ${code}`));
+        } else {
+          resolve(stdout.trim());
+        }
+      });
+
+      proc.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+
+      proc.stdin.write(script);
+      proc.stdin.end();
+    });
   }
 
   private escapeString(str: string): string {
@@ -493,6 +509,52 @@ export class OmniFocus {
     await this.executeJXA(this.wrapOmniScript(omniScript));
   }
 
+  /**
+   * Complete multiple tasks in a single JXA invocation.
+   * Returns the list of tasks that were completed.
+   */
+  async completeTasks(idsOrNames: string[]): Promise<Task[]> {
+    const escaped = idsOrNames.map(id => `"${this.escapeString(id)}"`);
+    const omniScript = `
+      ${this.OMNI_HELPERS}
+      (() => {
+        const ids = [${escaped.join(', ')}];
+        const results = [];
+        for (const id of ids) {
+          const task = findTask(id);
+          task.markComplete();
+          results.push(serializeTask(task));
+        }
+        return JSON.stringify(results);
+      })();
+    `;
+
+    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
+    return JSON.parse(output);
+  }
+
+  /**
+   * Delete multiple tasks in a single JXA invocation.
+   * Returns the count of deleted tasks.
+   */
+  async deleteTasks(idsOrNames: string[]): Promise<number> {
+    const escaped = idsOrNames.map(id => `"${this.escapeString(id)}"`);
+    const omniScript = `
+      ${this.OMNI_HELPERS}
+      (() => {
+        const ids = [${escaped.join(', ')}];
+        const tasks = ids.map(id => findTask(id));
+        for (const task of tasks) {
+          deleteObject(task);
+        }
+        return JSON.stringify(tasks.length);
+      })();
+    `;
+
+    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
+    return JSON.parse(output);
+  }
+
   async listProjects(filters: ProjectFilters = {}): Promise<Project[]> {
     const filterCode = this.buildProjectFilters(filters);
     const omniScript = `
@@ -559,13 +621,47 @@ export class OmniFocus {
     await this.executeJXA(this.wrapOmniScript(omniScript));
   }
 
+  /**
+   * List inbox tasks using the Omni Automation `inbox` global object directly.
+   * Unlike getPerspectiveTasks('Inbox'), this does NOT require an open window.
+   */
   async listInboxTasks(): Promise<Task[]> {
-    return this.getPerspectiveTasks('Inbox');
+    const omniScript = `
+      ${this.OMNI_HELPERS}
+      (() => {
+        const results = [];
+        for (const task of inbox) {
+          if (task.completed) continue;
+          if (!task.effectiveActive) continue;
+          results.push(serializeTask(task));
+        }
+        return JSON.stringify(results);
+      })();
+    `;
+
+    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
+    return JSON.parse(output);
   }
 
+  /**
+   * Count inbox tasks directly without serializing every task object.
+   * Uses the `inbox` global to avoid window dependency.
+   */
   async getInboxCount(): Promise<number> {
-    const tasks = await this.getPerspectiveTasks('Inbox');
-    return tasks.length;
+    const omniScript = `
+      (() => {
+        let count = 0;
+        for (const task of inbox) {
+          if (task.completed) continue;
+          if (!task.effectiveActive) continue;
+          count++;
+        }
+        return JSON.stringify(count);
+      })();
+    `;
+
+    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
+    return JSON.parse(output);
   }
 
   async searchTasks(query: string): Promise<Task[]> {
