@@ -35,5 +35,7 @@ program.addCommand(createFolderCommand());
 program.addCommand(createMcpCommand());
 
 program.parseAsync().catch(() => {
-  process.exit(1);
+  // Set exitCode instead of calling process.exit() so any queued stdout
+  // writes finish before the process terminates. See errors.ts for details.
+  process.exitCode = 1;
 });

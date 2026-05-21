@@ -10,7 +10,7 @@ export class OmniFocusCliError extends Error {
   }
 }
 
-export function handleError(error: unknown): never {
+export function handleError(error: unknown): void {
   let name = 'unknown_error';
   let detail = 'An unknown error occurred';
   let statusCode = 500;
@@ -31,5 +31,9 @@ export function handleError(error: unknown): never {
   }
 
   outputJson({ error: { name, detail, statusCode } });
-  process.exit(1);
+  // Set exitCode instead of calling process.exit() to let the stdout pipe
+  // buffer drain before the process terminates. Calling process.exit()
+  // truncates piped output at ~512 bytes on macOS because pipe writes are
+  // asynchronous. See https://nodejs.org/api/process.html#processexitcode
+  process.exitCode = 1;
 }
