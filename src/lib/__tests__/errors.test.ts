@@ -1,57 +1,57 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { handleError, OmniFocusCliError } from '../errors.js';
 
-describe('handleError', () => {
-  let logSpy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    process.exitCode = undefined;
-    logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
-  });
-
-  afterEach(() => {
-    logSpy.mockRestore();
-    // Always clear exitCode after each test. handleError sets it to 1 and
-    // we must not leak that into the test runner's own exit status — which
-    // bun's native test runner reads to decide if the suite passed.
-    process.exitCode = undefined;
-  });
-
-  function lastLoggedJson(): unknown {
+/**
+ * Calls handleError while isolating the side effects: captures the JSON
+ * written to stdout, captures the resulting process.exitCode, and restores
+ * both before returning. This keeps the test runner's own exit status clean
+ * (bun's native test runner reads process.exitCode at suite end).
+ */
+function runHandleError(error: unknown): { logged: unknown; exitCode: unknown } {
+  const previousExitCode = process.exitCode;
+  process.exitCode = undefined;
+  const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+  try {
+    handleError(error);
+    const capturedExit = process.exitCode;
     const lastCall = logSpy.mock.calls.at(-1);
-    if (!lastCall) throw new Error('console.log was not called');
-    return JSON.parse(String(lastCall[0]));
+    const logged = lastCall ? JSON.parse(String(lastCall[0])) : undefined;
+    return { logged, exitCode: capturedExit };
+  } finally {
+    logSpy.mockRestore();
+    process.exitCode = previousExitCode;
   }
+}
 
+describe('handleError', () => {
   it('sets process.exitCode to 1 without calling process.exit', () => {
-    handleError(new Error('boom'));
-    expect(process.exitCode).toBe(1);
+    const { exitCode } = runHandleError(new Error('boom'));
+    expect(exitCode).toBe(1);
   });
 
   it('returns normally so the event loop can drain stdout', () => {
     // If handleError still called process.exit(), this test would never
-    // complete normally. Reaching the assertion proves the function
-    // returns synchronously.
-    expect(() => handleError(new Error('boom'))).not.toThrow();
+    // complete normally. Reaching the assertion proves the function returns.
+    expect(() => runHandleError(new Error('boom'))).not.toThrow();
   });
 
   it('serializes OmniFocusCliError with its statusCode', () => {
-    handleError(new OmniFocusCliError('bad request', 400));
-    expect(lastLoggedJson()).toEqual({
+    const { logged } = runHandleError(new OmniFocusCliError('bad request', 400));
+    expect(logged).toEqual({
       error: { name: 'cli_error', detail: 'bad request', statusCode: 400 },
     });
   });
 
   it('maps "not found" errors to 404', () => {
-    handleError(new Error('Task not found'));
-    expect(lastLoggedJson()).toEqual({
+    const { logged } = runHandleError(new Error('Task not found'));
+    expect(logged).toEqual({
       error: { name: 'omnifocus_error', detail: 'Task not found', statusCode: 404 },
     });
   });
 
   it('maps "Multiple" errors to 400', () => {
-    handleError(new Error('Multiple matches for "foo"'));
-    expect(lastLoggedJson()).toEqual({
+    const { logged } = runHandleError(new Error('Multiple matches for "foo"'));
+    expect(logged).toEqual({
       error: {
         name: 'omnifocus_error',
         detail: 'Multiple matches for "foo"',
@@ -61,8 +61,8 @@ describe('handleError', () => {
   });
 
   it('falls back to unknown_error for non-Error values', () => {
-    handleError('something weird');
-    expect(lastLoggedJson()).toEqual({
+    const { logged } = runHandleError('something weird');
+    expect(logged).toEqual({
       error: { name: 'unknown_error', detail: 'An unknown error occurred', statusCode: 500 },
     });
   });
