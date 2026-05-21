@@ -93,7 +93,8 @@ Commands use `withErrorHandling()` HOF which:
 - **Window Requirement**: Perspective viewing requires an OmniFocus window to be open
 - **Permissions**: First run requires granting Automation permissions in System Settings
 - **ESM Modules**: Uses ES modules (type: "module" in package.json), all imports need .js extensions
-- **Never call `process.exit()`**: It terminates the process before async stdout pipe writes drain, truncating piped output at ~512 bytes (issue #20). Set `process.exitCode` instead and let the event loop finish naturally.
+- **Never call `process.exit()`**: It terminates the process before async stdout pipe writes drain, truncating piped output at ~512 bytes (issue #20). Set `process.exitCode` instead and let the event loop finish naturally. Commander's built-in exit (for `--help`, `--version`, parse errors) is suppressed via `program.exitOverride()` in `src/cli.ts` for the same reason.
+- **Runtime split**: bun is a *dev* dependency (TS execution, build via tsup, test runner). The shipped binary uses `#!/usr/bin/env node` because bun drops queued stdout writes on exit even without a `process.exit()` call (root cause of issue #20). End users only need node ≥ 20. Do not reintroduce a `bun` shebang on `dist/cli.js`.
 
 ## Testing Notes
 

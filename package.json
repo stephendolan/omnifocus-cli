@@ -45,7 +45,7 @@
     "LICENSE"
   ],
   "engines": {
-    "bun": ">=1.0.0"
+    "node": ">=20"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
