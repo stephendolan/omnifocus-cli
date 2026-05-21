@@ -3,17 +3,18 @@ import { handleError, OmniFocusCliError } from '../errors.js';
 
 describe('handleError', () => {
   let logSpy: ReturnType<typeof vi.spyOn>;
-  let originalExitCode: typeof process.exitCode;
 
   beforeEach(() => {
-    originalExitCode = process.exitCode;
     process.exitCode = undefined;
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
     logSpy.mockRestore();
-    process.exitCode = originalExitCode;
+    // Always clear exitCode after each test. handleError sets it to 1 and
+    // we must not leak that into the test runner's own exit status — which
+    // bun's native test runner reads to decide if the suite passed.
+    process.exitCode = undefined;
   });
 
   function lastLoggedJson(): unknown {
