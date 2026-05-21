@@ -4,6 +4,13 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # zod v4 and typescript v6 were each tried and reverted (commits c8468c2,
+    # e0be1a5). Ignore their major bumps until we deliberately plan an upgrade.
+    ignore:
+      - dependency-name: zod
+        update-types: ["version-update:semver-major"]
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
     groups:
       all-dependencies:
         patterns:
