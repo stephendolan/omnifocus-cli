@@ -93,6 +93,12 @@ Commands use `withErrorHandling()` HOF which:
 - **Window Requirement**: Perspective viewing requires an OmniFocus window to be open
 - **Permissions**: First run requires granting Automation permissions in System Settings
 - **ESM Modules**: Uses ES modules (type: "module" in package.json), all imports need .js extensions
+- **Never call `process.exit()`**: It terminates the process before async stdout pipe writes drain, truncating piped output at ~512 bytes (issue #20). Set `process.exitCode` instead and let the event loop finish naturally.
+
+## Testing Notes
+
+- `bun run test` uses vitest; CI runs `bun test` (bun's native runner). They have different semantics — verify both locally before pushing.
+- Bun's native test runner snapshots any `process.exitCode` mutation during a test and uses it as the suite's exit code, even when reverted. Tests that need to assert exit behavior must run the code in a child process.
 
 ## Date Handling
 
