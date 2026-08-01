@@ -92,7 +92,7 @@ server.tool(
     flagged: z.boolean().optional().describe('Flag/unflag the task'),
     estimatedMinutes: z.number().optional().describe('New estimated duration'),
     completed: z.boolean().optional().describe('Mark complete/incomplete'),
-    dropped: z.boolean().optional().describe('Mark dropped, or restore (false) to active'),
+    dropped: z.boolean().optional().describe('Mark dropped/undropped'),
   },
   async ({ idOrName, ...options }) => jsonResponse(await of.updateTask(idOrName, options))
 );
