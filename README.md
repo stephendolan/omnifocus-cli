@@ -43,7 +43,8 @@ of task create "Name" [options]
   --note <text>                     # Add note
 
 of task update <name|id> [options]
-  --complete                        # Mark completed
+  --complete / --incomplete         # Mark completed/incomplete
+  --drop / --undrop                 # Mark dropped/restore to active
   --flag / --unflag                 # Toggle flag
   --name <new-name>                 # Rename
   --project/--tag/--due/--defer     # Same as create
