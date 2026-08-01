@@ -43,7 +43,7 @@ export class OmniFocus {
         name: task.name,
         note: task.note || null,
         completed: task.completed,
-        dropped: task.dropped,
+        dropped: task.dropDate !== null,
         effectivelyActive: task.effectiveActive,
         flagged: task.flagged,
         project: containingProject ? containingProject.name : null,
@@ -353,6 +353,9 @@ export class OmniFocus {
     }
     if (options.completed !== undefined) {
       updates.push(options.completed ? 'task.markComplete();' : 'task.markIncomplete();');
+    }
+    if (options.dropped !== undefined) {
+      updates.push(options.dropped ? 'task.drop(false, null);' : 'task.active = true;');
     }
     if (options.estimatedMinutes !== undefined) {
       updates.push(`task.estimatedMinutes = ${options.estimatedMinutes};`);
