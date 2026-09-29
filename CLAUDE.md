@@ -99,6 +99,8 @@ Commands use `withErrorHandling()` HOF which:
 ## Testing Notes
 
 - `bun run test` uses vitest; CI runs `bun test` (bun's native runner). They have different semantics — verify both locally before pushing.
+- CI never executes vitest: `bun test` remaps `vitest` imports to `bun:test`. A green CI check on a vitest bump proves nothing; run `bun run test` locally.
+- Dependabot bumps `package.json` but not `bun.lock` here. Before merging any Dependabot npm PR, run `bun install`, commit the lockfile, and confirm `bun install --frozen-lockfile` passes.
 - Bun's native test runner snapshots any `process.exitCode` mutation during a test and uses it as the suite's exit code, even when reverted. Tests that need to assert exit behavior must run the code in a child process.
 
 ## Date Handling
