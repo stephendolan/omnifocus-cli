@@ -39,9 +39,7 @@ async function pipedStdoutLength(args: string[]): Promise<number> {
 describe('pipe truncation regression (issue #20)', () => {
   beforeAll(() => {
     if (!existsSync(distCli)) {
-      throw new Error(
-        `dist/cli.js not found — run \`bun run build\` before this test suite.`
-      );
+      throw new Error(`dist/cli.js not found — run \`bun run build\` before this test suite.`);
     }
   });
 

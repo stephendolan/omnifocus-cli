@@ -14,7 +14,10 @@ bun install                    # Install dependencies
 bun run build                  # Build TypeScript to dist/
 bun run dev                    # Watch mode for development
 bun link                       # Link binary for local testing (creates `of` command)
+bun run format                 # Format src/ with Biome (format:check runs in CI)
 ```
+
+Biome is v2: `biome.json` uses `files.includes` with `!` negations. Biome 1 keys (`include`, `ignore`) make it abort before formatting. After a Biome major bump, run `bunx biome migrate --write`.
 
 ### Testing the CLI
 After `bun link`, use `of` command globally:

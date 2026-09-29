@@ -113,9 +113,13 @@ server.tool(
   async ({ query }) => jsonResponse(await of.searchTasks(query))
 );
 
-server.tool('get_task_stats', 'Get task statistics', {}, async () => jsonResponse(await of.getTaskStats()));
+server.tool('get_task_stats', 'Get task statistics', {}, async () =>
+  jsonResponse(await of.getTaskStats())
+);
 
-server.tool('list_inbox', 'List all inbox tasks', {}, async () => jsonResponse(await of.listInboxTasks()));
+server.tool('list_inbox', 'List all inbox tasks', {}, async () =>
+  jsonResponse(await of.listInboxTasks())
+);
 
 server.tool('get_inbox_count', 'Get the number of inbox tasks', {}, async () =>
   jsonResponse({ count: await of.getInboxCount() })
@@ -178,7 +182,9 @@ server.tool(
   }
 );
 
-server.tool('get_project_stats', 'Get project statistics', {}, async () => jsonResponse(await of.getProjectStats()));
+server.tool('get_project_stats', 'Get project statistics', {}, async () =>
+  jsonResponse(await of.getProjectStats())
+);
 
 server.tool('list_perspectives', 'List all available perspectives', {}, async () =>
   jsonResponse(await of.listPerspectives())
@@ -241,7 +247,9 @@ server.tool(
   }
 );
 
-server.tool('get_tag_stats', 'Get tag statistics', {}, async () => jsonResponse(await of.getTagStats()));
+server.tool('get_tag_stats', 'Get tag statistics', {}, async () =>
+  jsonResponse(await of.getTagStats())
+);
 
 server.tool(
   'list_folders',
@@ -257,19 +265,24 @@ server.tool(
     idOrName: z.string().describe('Folder ID or name'),
     includeDropped: z.boolean().optional().describe('Include dropped children'),
   },
-  async ({ idOrName, includeDropped }) => jsonResponse(await of.getFolder(idOrName, { includeDropped }))
+  async ({ idOrName, includeDropped }) =>
+    jsonResponse(await of.getFolder(idOrName, { includeDropped }))
 );
 
 server.tool(
   'search_tools',
   'Search for available tools by name or description using regex. Returns matching tool names.',
   {
-    query: z.string().describe('Regex pattern to match against tool names and descriptions (case-insensitive)'),
+    query: z
+      .string()
+      .describe('Regex pattern to match against tool names and descriptions (case-insensitive)'),
   },
   async ({ query }) => {
     try {
       const pattern = new RegExp(query, 'i');
-      const matches = toolRegistry.filter((t) => pattern.test(t.name) || pattern.test(t.description));
+      const matches = toolRegistry.filter(
+        (t) => pattern.test(t.name) || pattern.test(t.description)
+      );
       return jsonResponse({ tools: matches });
     } catch {
       return jsonResponse({ error: 'Invalid regex pattern' });
