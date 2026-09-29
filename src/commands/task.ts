@@ -39,6 +39,7 @@ export function createTaskCommand(): Command {
     .option('-t, --tag <tags...>', 'Add tags')
     .option('-d, --due <date>', 'Set due date')
     .option('-D, --defer <date>', 'Set defer date')
+    .option('-P, --planned <date>', 'Set planned date')
     .option('-f, --flagged', 'Flag the task')
     .option('-e, --estimate <minutes>', 'Estimated time in minutes', parseInt)
     .action(
@@ -51,6 +52,7 @@ export function createTaskCommand(): Command {
           tags: options.tag,
           due: options.due ? parseDateTime(options.due) : undefined,
           defer: options.defer ? parseDateTime(options.defer) : undefined,
+          planned: options.planned ? parseDateTime(options.planned) : undefined,
           flagged: options.flagged,
           estimatedMinutes: options.estimate,
         });
@@ -67,6 +69,7 @@ export function createTaskCommand(): Command {
     .option('-t, --tag <tags...>', 'Replace tags')
     .option('-d, --due <date>', 'Set due date')
     .option('-D, --defer <date>', 'Set defer date')
+    .option('-P, --planned <date>', 'Set planned date')
     .option('-f, --flag', 'Flag the task')
     .option('-F, --unflag', 'Unflag the task')
     .option('-c, --complete', 'Mark as completed')
@@ -85,6 +88,9 @@ export function createTaskCommand(): Command {
           }),
           ...(options.defer !== undefined && {
             defer: options.defer ? parseDateTime(options.defer) : null,
+          }),
+          ...(options.planned !== undefined && {
+            planned: options.planned ? parseDateTime(options.planned) : null,
           }),
           ...(options.flag && { flagged: true }),
           ...(options.unflag && { flagged: false }),

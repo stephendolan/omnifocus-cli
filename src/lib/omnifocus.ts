@@ -50,6 +50,7 @@ export class OmniFocus {
         tags: tagNames,
         defer: task.deferDate ? task.deferDate.toISOString() : null,
         due: task.dueDate ? task.dueDate.toISOString() : null,
+        planned: task.plannedDate ? task.plannedDate.toISOString() : null,
         estimatedMinutes: task.estimatedMinutes || null,
         completionDate: task.completionDate ? task.completionDate.toISOString() : null,
         added: task.added ? task.added.toISOString() : null,
@@ -371,6 +372,13 @@ export class OmniFocus {
           : 'task.dueDate = null;'
       );
     }
+    if (options.planned !== undefined) {
+      updates.push(
+        options.planned
+          ? `task.plannedDate = new Date(${JSON.stringify(options.planned)});`
+          : 'task.plannedDate = null;'
+      );
+    }
     if (options.project !== undefined && options.project) {
       updates.push(`
         const targetProject = findByName(flattenedProjects, "${this.escapeString(options.project)}", "Project");
@@ -458,6 +466,7 @@ export class OmniFocus {
         ${options.estimatedMinutes ? `task.estimatedMinutes = ${options.estimatedMinutes};` : ''}
         ${options.defer ? `task.deferDate = new Date(${JSON.stringify(options.defer)});` : ''}
         ${options.due ? `task.dueDate = new Date(${JSON.stringify(options.due)});` : ''}
+        ${options.planned ? `task.plannedDate = new Date(${JSON.stringify(options.planned)});` : ''}
         ${options.tags && options.tags.length > 0 ? `assignTags(task, ${JSON.stringify(options.tags)});` : ''}
 
         return JSON.stringify(serializeTask(task));
