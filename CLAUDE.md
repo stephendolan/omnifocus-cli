@@ -98,7 +98,8 @@ Commands use `withErrorHandling()` HOF which:
 
 ## Testing Notes
 
-- `bun run test` uses vitest; CI runs `bun test` (bun's native runner). They have different semantics — verify both locally before pushing.
+- Tests use bun's native runner (`bun test`, imports from `bun:test`); `bun run test` is an alias. Keep a single runner so CI exercises the same suite, dependencies, and lockfile that local runs do.
+- `pipe-truncation.test.ts` runs against `dist/cli.js`, so run `bun run build` before `bun test`.
 - Bun's native test runner snapshots any `process.exitCode` mutation during a test and uses it as the suite's exit code, even when reverted. Tests that need to assert exit behavior must run the code in a child process.
 
 ## Date Handling
