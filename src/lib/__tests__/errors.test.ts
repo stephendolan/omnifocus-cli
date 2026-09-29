@@ -24,7 +24,12 @@ interface HandleErrorResult {
 }
 
 async function runHandleError(
-  scenario: 'omnifocus_cli_error' | 'error_not_found' | 'error_multiple' | 'error_plain' | 'non_error'
+  scenario:
+    | 'omnifocus_cli_error'
+    | 'error_not_found'
+    | 'error_multiple'
+    | 'error_plain'
+    | 'non_error'
 ): Promise<HandleErrorResult> {
   const tmp = await mkdtemp(join(tmpdir(), 'of-errors-test-'));
   const script = join(tmp, 'run.mjs');
