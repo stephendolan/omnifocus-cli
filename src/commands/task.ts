@@ -71,6 +71,8 @@ export function createTaskCommand(): Command {
     .option('-F, --unflag', 'Unflag the task')
     .option('-c, --complete', 'Mark as completed')
     .option('-C, --incomplete', 'Mark as incomplete')
+    .option('--drop', 'Mark as dropped')
+    .option('--undrop', 'Restore a dropped task to active')
     .option('-e, --estimate <minutes>', 'Estimated time in minutes', parseInt)
     .action(
       withErrorHandling(async (idOrName, options) => {
@@ -90,6 +92,8 @@ export function createTaskCommand(): Command {
           ...(options.unflag && { flagged: false }),
           ...(options.complete && { completed: true }),
           ...(options.incomplete && { completed: false }),
+          ...(options.drop && { dropped: true }),
+          ...(options.undrop && { dropped: false }),
           ...(options.estimate !== undefined && { estimatedMinutes: options.estimate }),
         };
         const task = await of.updateTask(idOrName, updates);
