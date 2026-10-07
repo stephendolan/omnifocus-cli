@@ -1,9 +1,12 @@
 version: 2
 updates:
-  - package-ecosystem: npm
+  - package-ecosystem: bun
     directory: /
     schedule:
       interval: weekly
+    # Skip releases younger than three days; hijacked npm versions are usually caught by then.
+    cooldown:
+      default-days: 3
     # zod v4 and typescript v6 were each tried and reverted (commits c8468c2,
     # e0be1a5). Ignore their major bumps until we deliberately plan an upgrade.
     ignore:
