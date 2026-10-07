@@ -1,7 +1,4 @@
 import { execFile } from 'child_process';
-import { writeFile, unlink } from 'fs/promises';
-import { tmpdir } from 'os';
-import { join } from 'path';
 import { promisify } from 'util';
 import type {
   Task,
@@ -247,24 +244,16 @@ export class OmniFocus {
   `;
 
   private async executeJXA(script: string, timeoutMs = 30000): Promise<string> {
-    const tmpFile = join(tmpdir(), `omnifocus-${Date.now()}.js`);
+    const osascript = execFileAsync('osascript', ['-l', 'JavaScript', '-'], {
+      timeout: timeoutMs,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    // osascript's exit status reports failures; ignore EPIPE if it exits before reading stdin.
+    osascript.child.stdin?.on('error', () => {});
+    osascript.child.stdin?.end(script);
 
-    try {
-      await writeFile(tmpFile, script, 'utf-8');
-
-      const { stdout } = await execFileAsync('osascript', ['-l', 'JavaScript', tmpFile], {
-        timeout: timeoutMs,
-        maxBuffer: 10 * 1024 * 1024,
-      });
-
-      return stdout.trim();
-    } finally {
-      try {
-        await unlink(tmpFile);
-      } catch {
-        /* ignore cleanup errors */
-      }
-    }
+    const { stdout } = await osascript;
+    return stdout.trim();
   }
 
   private escapeString(str: string): string {
