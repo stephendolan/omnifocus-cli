@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'bun:test';
 import { formatEstimate, isTaskOverdue, formatTags, pluralize } from '../display.js';
 import type { Task } from '../../types.js';
 

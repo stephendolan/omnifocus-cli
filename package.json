@@ -15,7 +15,7 @@
     "format": "bun run biome format --write src",
     "format:check": "bun run biome format src",
     "typecheck": "bun run tsc --noEmit",
-    "test": "bun run vitest run",
+    "test": "bun test",
     "link": "bun run build && bun link",
     "prepublishOnly": "bun run build"
   },
@@ -58,7 +58,6 @@
     "@types/bun": "latest",
     "oxlint": "^1.38.0",
     "tsup": "^8.0.0",
-    "typescript": "^5.7.2",
-    "vitest": "^4.0.14"
+    "typescript": "^5.7.2"
   }
 }

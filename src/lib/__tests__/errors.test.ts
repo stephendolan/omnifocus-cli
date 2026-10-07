@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect } from 'bun:test';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { mkdtemp, writeFile, rm } from 'fs/promises';
@@ -24,7 +24,12 @@ interface HandleErrorResult {
 }
 
 async function runHandleError(
-  scenario: 'omnifocus_cli_error' | 'error_not_found' | 'error_multiple' | 'error_plain' | 'non_error'
+  scenario:
+    | 'omnifocus_cli_error'
+    | 'error_not_found'
+    | 'error_multiple'
+    | 'error_plain'
+    | 'non_error'
 ): Promise<HandleErrorResult> {
   const tmp = await mkdtemp(join(tmpdir(), 'of-errors-test-'));
   const script = join(tmp, 'run.mjs');
@@ -74,10 +79,6 @@ handleError(error);
 }
 
 describe('handleError', () => {
-  beforeAll(() => {
-    // Sanity check the helper compiles cleanly; nothing else needed.
-  });
-
   it('exits with code 1 instead of calling process.exit', async () => {
     const { exitCode } = await runHandleError('error_plain');
     expect(exitCode).toBe(1);

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll } from 'bun:test';
 import { spawn, execFile } from 'child_process';
 import { promisify } from 'util';
 import { existsSync, readFileSync } from 'fs';
@@ -39,9 +39,7 @@ async function pipedStdoutLength(args: string[]): Promise<number> {
 describe('pipe truncation regression (issue #20)', () => {
   beforeAll(() => {
     if (!existsSync(distCli)) {
-      throw new Error(
-        `dist/cli.js not found — run \`bun run build\` before this test suite.`
-      );
+      throw new Error(`dist/cli.js not found — run \`bun run build\` before this test suite.`);
     }
   });
 
