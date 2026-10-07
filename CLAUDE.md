@@ -32,7 +32,7 @@ of inbox count                 # Get inbox count
 ### Core Integration Layer (src/lib/omnifocus.ts)
 
 The `OmniFocus` class is the central integration point:
-- **JXA Execution**: Writes JavaScript to temp files and executes via `osascript -l JavaScript`
+- **JXA Execution**: Pipes JavaScript to `osascript -l JavaScript -` over stdin, so concurrent calls (such as parallel MCP tool calls) never share a script file
 - **Omni Automation API**: Uses OmniFocus's Omni Automation JavaScript API (formerly JXA)
 - **Helper Functions**: `OMNI_HELPERS` constant contains reusable JXA functions for serialization, finding objects, and tag management
 - **Script Wrapping**: `wrapOmniScript()` wraps Omni Automation code in the required Application boilerplate
@@ -72,7 +72,7 @@ Core types in `src/types.ts`:
 1. Build JavaScript string with embedded helper functions
 2. Use `escapeString()` for all user input to prevent injection
 3. Wrap in `wrapOmniScript()` to add Application boilerplate
-4. Write to temp file, execute via osascript, clean up temp file
+4. Pipe the script to osascript's stdin
 5. Parse JSON output from serialized OmniFocus objects
 
 ### Error Handling
