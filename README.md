@@ -134,8 +134,20 @@ of search "query"                   # Search tasks
 Run as an MCP server for AI agent integration:
 
 ```bash
-of mcp
+of mcp                              # stdio, for agents on this Mac
+of mcp --http                       # Streamable HTTP at http://127.0.0.1:3939/mcp
+of mcp --http 4000                  # Same, on another port
 ```
+
+HTTP mode listens on 127.0.0.1 and accepts only `localhost` and `127.0.0.1` as the Host. To reach it from other devices on your tailnet, allow the Mac's MagicDNS name and publish the port with `tailscale serve`:
+
+```bash
+of mcp --http --allow-host <machine>.<tailnet>.ts.net
+tailscale serve --bg --https=8443 http://127.0.0.1:3939
+claude mcp add --transport http omnifocus https://<machine>.<tailnet>.ts.net:8443/mcp
+```
+
+Anyone who can reach that URL can read and change your OmniFocus database, so keep it tailnet-only rather than on Funnel.
 
 ## JSON Output
 

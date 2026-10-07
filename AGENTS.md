@@ -14,7 +14,7 @@
 
 ## Commands and MCP tools
 
-Each `src/commands/*.ts` exports a `createXCommand()`; OmniFocus-backed actions run inside `withErrorHandling()` and print through `outputJson()`. `src/mcp/server.ts` exposes the same `OmniFocus` methods as tools, so a new or changed command option belongs in the matching tool's zod schema and in `README.md` too. Each tool's description lives twice in that file, in `server.tool()` and in `toolRegistry` (which backs `search_tools`); change both together.
+Each `src/commands/*.ts` exports a `createXCommand()`; OmniFocus-backed actions run inside `withErrorHandling()` and print through `outputJson()`. `src/mcp/server.ts` exposes the same `OmniFocus` methods as tools, so a new or changed command option belongs in the matching tool's zod schema and in `README.md` too. Each tool's description lives twice in that file, in `server.tool()` and in `toolRegistry` (which backs `search_tools`); change both together. Tools register inside `createMcpServer()` because `of mcp --http` (`src/mcp/http.ts`) builds a fresh server per request.
 
 Date options follow `due` and `defer`: the CLI parses them with `parseDateTime()`, rejecting invalid input with a 400 before OmniFocus runs, and an empty value on `update` clears the date.
 
