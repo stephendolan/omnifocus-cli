@@ -12,17 +12,15 @@ A CLI tool for OmniFocus on macOS that uses JavaScript for Automation (JXA) to i
 ```bash
 bun install                    # Install dependencies
 bun run build                  # Build TypeScript to dist/
-bun run dev                    # Run CLI directly via bun (no build required)
-bun run link                   # Build + link binary globally (creates `of` command)
-bun run lint                   # Lint with oxlint
-bun run format                 # Format with Biome (writes changes)
-bun run typecheck              # Type-check without emitting
-bun run test                   # Run all tests with vitest
-bun run vitest run <file>      # Run a single test file
+bun run dev                    # Watch mode for development
+bun link                       # Link binary for local testing (creates `of` command)
+bun run format                 # Format src/ with Biome (format:check runs in CI)
 ```
 
+Biome is v2: `biome.json` uses `files.includes` with `!` negations. Biome 1 keys (`include`, `ignore`) make it abort before formatting. After a Biome major bump, run `bunx biome migrate --write`.
+
 ### Testing the CLI
-After `bun run link`, use `of` command globally:
+After `bun link`, use `of` command globally:
 ```bash
 of task list                   # List tasks
 of project list                # List projects
@@ -55,10 +53,6 @@ Files:
 - `src/commands/perspective.ts` - Perspective switching and viewing
 - `src/commands/search.ts` - Task search
 - `src/commands/tag.ts` - Tag management and statistics
-- `src/commands/folder.ts` - Folder hierarchy (list, view)
-- `src/commands/mcp.ts` + `src/mcp/server.ts` - MCP server (`of mcp`) exposing all OmniFocus operations as MCP tools via stdio transport
-- `src/lib/display.ts` - Formatting helpers (estimates, dates, tags)
-- `src/lib/output.ts` - `outputJson()` for all command output (supports compact mode)
 
 ### Type Definitions
 
@@ -102,6 +96,14 @@ Commands use `withErrorHandling()` HOF which:
 - **Window Requirement**: Perspective viewing requires an OmniFocus window to be open
 - **Permissions**: First run requires granting Automation permissions in System Settings
 - **ESM Modules**: Uses ES modules (type: "module" in package.json), all imports need .js extensions
+- **Never call `process.exit()`**: It terminates the process before async stdout pipe writes drain, truncating piped output at ~512 bytes (issue #20). Set `process.exitCode` instead and let the event loop finish naturally. Commander's built-in exit (for `--help`, `--version`, parse errors) is suppressed via `program.exitOverride()` in `src/cli.ts` for the same reason.
+- **Runtime split**: bun is a *dev* dependency (TS execution, build via tsup, test runner). The shipped binary uses `#!/usr/bin/env node` because bun drops queued stdout writes on exit even without a `process.exit()` call (root cause of issue #20). End users only need node ≥ 20. Do not reintroduce a `bun` shebang on `dist/cli.js`.
+
+## Testing Notes
+
+- Tests use bun's native runner (`bun test`, imports from `bun:test`); `bun run test` is an alias. Keep a single runner so CI exercises the same suite, dependencies, and lockfile that local runs do.
+- `pipe-truncation.test.ts` runs against `dist/cli.js`, so run `bun run build` before `bun test`.
+- Bun's native test runner snapshots any `process.exitCode` mutation during a test and uses it as the suite's exit code, even when reverted. Tests that need to assert exit behavior must run the code in a child process.
 
 ## Date Handling
 

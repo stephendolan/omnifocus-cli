@@ -66,6 +66,7 @@ export interface UpdateTaskOptions {
   flagged?: boolean;
   estimatedMinutes?: number;
   completed?: boolean;
+  dropped?: boolean;
 }
 
 export interface CreateProjectOptions {
