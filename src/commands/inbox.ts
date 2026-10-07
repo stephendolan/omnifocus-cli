@@ -11,7 +11,7 @@ export function createInboxCommand(): Command {
   command
     .command('list')
     .alias('ls')
-    .description('List inbox tasks')
+    .description('List remaining inbox tasks, including subtasks')
     .action(
       withErrorHandling(async () => {
         const of = new OmniFocus();
@@ -22,7 +22,7 @@ export function createInboxCommand(): Command {
 
   command
     .command('count')
-    .description('Get inbox count')
+    .description('Count remaining inbox tasks')
     .action(
       withErrorHandling(async () => {
         const of = new OmniFocus();

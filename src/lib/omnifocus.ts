@@ -574,11 +574,23 @@ export class OmniFocus {
   }
 
   async listInboxTasks(): Promise<Task[]> {
-    return this.getPerspectiveTasks('Inbox');
+    const omniScript = `
+      ${this.OMNI_HELPERS}
+      (() => {
+        const results = [];
+        inbox.apply(task => {
+          if (!task.completed && task.effectiveActive) results.push(serializeTask(task));
+        });
+        return JSON.stringify(results);
+      })();
+    `;
+
+    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
+    return JSON.parse(output);
   }
 
   async getInboxCount(): Promise<number> {
-    const tasks = await this.getPerspectiveTasks('Inbox');
+    const tasks = await this.listInboxTasks();
     return tasks.length;
   }
 
