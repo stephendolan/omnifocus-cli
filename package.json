@@ -51,13 +51,13 @@
     "@modelcontextprotocol/sdk": "^1.32.0",
     "commander": "^15.0.0",
     "dayjs": "^1.11.23",
-    "zod": "^3.25.76"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
     "@types/bun": "latest",
     "oxlint": "^1.86.0",
     "tsup": "^8.5.1",
-    "typescript": "^5.9.3"
+    "typescript": "^7.0.2"
   }
 }
