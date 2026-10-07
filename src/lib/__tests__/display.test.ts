@@ -35,6 +35,7 @@ describe('isTaskOverdue', () => {
     project: null,
     due: null,
     defer: null,
+    planned: null,
     estimatedMinutes: null,
     completionDate: null,
     added: null,

@@ -38,6 +38,7 @@ export function createInboxCommand(): Command {
     .option('-t, --tag <tags...>', 'Add tags')
     .option('-d, --due <date>', 'Set due date')
     .option('-D, --defer <date>', 'Set defer date')
+    .option('-P, --planned <date>', 'Set planned date')
     .option('-f, --flagged', 'Flag the task')
     .option('-e, --estimate <minutes>', 'Estimated time in minutes', parseInt)
     .action(
@@ -49,6 +50,7 @@ export function createInboxCommand(): Command {
           tags: options.tag,
           due: options.due ? parseDateTime(options.due) : undefined,
           defer: options.defer ? parseDateTime(options.defer) : undefined,
+          planned: options.planned ? parseDateTime(options.planned) : undefined,
           flagged: options.flagged,
           estimatedMinutes: options.estimate,
         });
