@@ -356,12 +356,7 @@ export class OmniFocus {
     }
     if (options.dropped !== undefined) {
       updates.push(
-        options.dropped
-          ? 'task.drop(false, null);'
-          // Guard against reactivating a completed task: `active` isn't
-          // specific to "dropped", so undrop is a no-op on a task that's
-          // completed rather than dropped.
-          : 'if (!task.completed) { task.active = true; }'
+        options.dropped ? 'task.drop(false, null);' : 'if (task.dropDate) task.active = true;'
       );
     }
     if (options.estimatedMinutes !== undefined) {
