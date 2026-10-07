@@ -95,8 +95,8 @@ of tag delete <name>                # Delete tag
 ### Inbox
 
 ```bash
-of inbox list                       # List inbox items
-of inbox count                      # Inbox count
+of inbox list                       # List remaining inbox tasks and subtasks
+of inbox count                      # Count remaining inbox tasks
 of inbox add "Task name"            # Add task to inbox
 ```
 

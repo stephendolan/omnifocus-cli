@@ -89,6 +89,8 @@ Commands use `withErrorHandling()` HOF which:
 3. Collects Task objects from the tree nodes
 4. Uses 60s timeout (longer than default 30s) due to perspective switching delay
 
+Inbox commands avoid it: they traverse the `inbox` collection directly (including subtasks), so they need no window and leave the user's view alone.
+
 ## Important Constraints
 
 - **macOS Only**: Uses osascript which is macOS-specific

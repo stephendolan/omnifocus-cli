@@ -11,8 +11,8 @@ const toolRegistry = [
   { name: 'delete_task', description: 'Delete a task' },
   { name: 'search_tasks', description: 'Search tasks by name or note content' },
   { name: 'get_task_stats', description: 'Get task statistics' },
-  { name: 'list_inbox', description: 'List all inbox tasks' },
-  { name: 'get_inbox_count', description: 'Get the number of inbox tasks' },
+  { name: 'list_inbox', description: 'List remaining inbox tasks, including subtasks' },
+  { name: 'get_inbox_count', description: 'Get the number of remaining inbox tasks' },
   { name: 'list_projects', description: 'List projects with optional filtering' },
   { name: 'get_project', description: 'Get a specific project by ID or name' },
   { name: 'create_project', description: 'Create a new project' },
@@ -120,11 +120,11 @@ server.tool('get_task_stats', 'Get task statistics', {}, async () =>
   jsonResponse(await of.getTaskStats())
 );
 
-server.tool('list_inbox', 'List all inbox tasks', {}, async () =>
+server.tool('list_inbox', 'List remaining inbox tasks, including subtasks', {}, async () =>
   jsonResponse(await of.listInboxTasks())
 );
 
-server.tool('get_inbox_count', 'Get the number of inbox tasks', {}, async () =>
+server.tool('get_inbox_count', 'Get the number of remaining inbox tasks', {}, async () =>
   jsonResponse({ count: await of.getInboxCount() })
 );
 
