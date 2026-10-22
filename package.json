@@ -57,7 +57,7 @@
     "@biomejs/biome": "^2.5.15",
     "@types/bun": "latest",
     "oxlint": "^1.86.0",
-    "tsup": "^8.5.1",
+    "tsup": "^9.0.0",
     "typescript": "^7.0.2"
   }
 }
