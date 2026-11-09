@@ -147,7 +147,19 @@ tailscale serve --bg --https=8443 http://127.0.0.1:3939
 claude mcp add --transport http omnifocus https://<machine>.<tailnet>.ts.net:8443/mcp
 ```
 
-Anyone who can reach that URL can read and change your OmniFocus database, so keep it tailnet-only rather than on Funnel.
+Full mode is the default (26 tools). Use `--mode read-only` for the 16-tool read-only allowlist; direct calls to excluded tools are rejected, including `get_perspective_tasks` because it changes the front window.
+
+For an authenticated public reverse proxy, require Cloudflare Access JWT validation at the origin:
+
+```bash
+of mcp --http 3940 --allow-host omnifocus.example.com --mode full \
+  --access-team-domain https://your-team.cloudflareaccess.com \
+  --access-audience YOUR_APPLICATION_AUDIENCE
+```
+
+Both Access options are required together; `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUDIENCE` provide the same configuration through environment variables. JWT validation applies on localhost too. The origin verifies the RS256 signature using the team's rotating JWKS, exact issuer, application audience, and expiry. Without Access configuration, anyone who can reach the listener can use its configured capabilities; keep that listener on a trusted tailnet.
+
+See [MCP operations](docs/mcp-operations.md) for release, health checks, and separate public-listener and tunnel LaunchAgents.
 
 ## JSON Output
 

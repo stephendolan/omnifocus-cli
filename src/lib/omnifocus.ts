@@ -252,8 +252,18 @@ export class OmniFocus {
     osascript.child.stdin?.on('error', () => {});
     osascript.child.stdin?.end(script);
 
-    const { stdout } = await osascript;
-    return stdout.trim();
+    try {
+      const { stdout } = await osascript;
+      return stdout.trim();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException & { killed?: boolean }).killed) {
+        throw new Error(
+          `OmniFocus automation did not respond within ${timeoutMs}ms. Check OmniFocus and macOS Automation permissions in this login session.`,
+          { cause: error }
+        );
+      }
+      throw error;
+    }
   }
 
   private escapeString(str: string): string {
