@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { createMcpServer } from './server.js';
+import { createAccessVerifier, type AccessConfig } from './access.js';
+import { createMcpServer, type McpServerOptions } from './server.js';
 
 const LOOPBACK_HOSTNAMES = ['localhost', '127.0.0.1'];
 const MAX_IN_FLIGHT_REQUESTS = 16;
@@ -20,8 +21,12 @@ function sendError(res: ServerResponse, status: number, message: string): void {
   res.end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32000, message }, id: null }));
 }
 
-async function handleMcpRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const server = createMcpServer();
+async function handleMcpRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  options: McpServerOptions
+): Promise<void> {
+  const server = createMcpServer(options);
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
@@ -36,10 +41,31 @@ async function handleMcpRequest(req: IncomingMessage, res: ServerResponse): Prom
 
 // Listens on loopback only. The Host allowlist blocks DNS rebinding from local browsers;
 // add the names a reverse proxy such as `tailscale serve` forwards with `allowedHostnames`.
-// Tool calls run to completion even if the client disconnects, so in-flight requests are capped.
-export function runMcpHttpServer(port: number, allowedHostnames: string[] = []): Promise<Server> {
+export interface McpHttpOptions extends Omit<McpServerOptions, 'execute'> {
+  access?: AccessConfig;
+}
+
+export function runMcpHttpServer(
+  port: number,
+  allowedHostnames: string[] = [],
+  options: McpHttpOptions = {}
+): Promise<Server> {
+  const verifyAccess = options.access ? createAccessVerifier(options.access) : undefined;
   const hostnames = new Set([...LOOPBACK_HOSTNAMES, ...allowedHostnames].map(normalizeHostname));
   let inFlight = 0;
+  let executing = 0;
+
+  async function execute<T>(operation: () => Promise<T>): Promise<T> {
+    if (executing >= MAX_IN_FLIGHT_REQUESTS) {
+      throw new Error('Too many concurrent OmniFocus operations');
+    }
+    executing++;
+    try {
+      return await operation();
+    } finally {
+      executing--;
+    }
+  }
 
   const httpServer = createServer((req, res) => {
     const hostname = hostnameOf(req.headers.host);
@@ -65,7 +91,18 @@ export function runMcpHttpServer(port: number, allowedHostnames: string[] = []):
     res.on('close', () => {
       inFlight--;
     });
-    handleMcpRequest(req, res).catch((error: unknown) => {
+    async function dispatch() {
+      if (verifyAccess) {
+        try {
+          await verifyAccess(req.headers['cf-access-jwt-assertion']);
+        } catch {
+          sendError(res, 401, 'Invalid or missing Cloudflare Access assertion');
+          return;
+        }
+      }
+      if (!res.destroyed) await handleMcpRequest(req, res, { ...options, execute });
+    }
+    dispatch().catch((error: unknown) => {
       if (!res.headersSent) {
         sendError(res, 500, error instanceof Error ? error.message : String(error));
       }

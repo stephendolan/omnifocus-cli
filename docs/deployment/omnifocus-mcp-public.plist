@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.stephendolan.omnifocus-mcp-public</string>
+  <key>ProgramArguments</key><array>
+    <string>__NODE_PATH__</string>
+    <string>__INSTALL_ROOT__/releases/2.8.0/node_modules/@stephendolan/omnifocus-cli/dist/cli.js</string>
+    <string>mcp</string><string>--http</string><string>3940</string>
+    <string>--allow-host</string><string>omnifocus.stephendolan.com</string>
+    <string>--mode</string><string>full</string>
+    <string>--access-team-domain</string><string>https://dolanfamily.cloudflareaccess.com</string>
+    <string>--access-audience</string><string>REPLACE_WITH_ACCESS_APPLICATION_AUDIENCE</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>__INSTALL_ROOT__/public.log</string>
+  <key>StandardErrorPath</key><string>__INSTALL_ROOT__/public.log</string>
+</dict></plist>

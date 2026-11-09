@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { once } from 'node:events';
 import { request, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
@@ -144,6 +146,77 @@ describe('of mcp --http under Node', () => {
       expect(status).toBe(200);
     } finally {
       child.kill();
+    }
+  });
+});
+
+describe('execution capacity after disconnect under Node', () => {
+  it('holds slots until the OmniFocus operations settle', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'of-execution-'));
+    const build = await Bun.build({
+      entrypoints: [join(import.meta.dir, 'fixtures/execution-server.ts')],
+      outdir: dir,
+      target: 'node',
+    });
+    if (!build.success) throw new Error(build.logs.join('\n'));
+    const child = spawn('node', [join(dir, 'execution-server.js')], {
+      stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
+    });
+    const requests: ReturnType<typeof request>[] = [];
+    try {
+      const [{ port }] = await once(child, 'message');
+      const started = new Promise<void>((resolve) =>
+        child.on('message', (message: { started?: number }) => {
+          if (message.started === 16) resolve();
+        })
+      );
+      for (let i = 0; i < 16; i++) {
+        const req = request({
+          host: '127.0.0.1',
+          port,
+          method: 'POST',
+          path: '/mcp',
+          headers: MCP_HEADERS,
+        });
+        req.on('error', () => {});
+        req.end(JSON.stringify(rpc(i, 'tools/call', { name: 'list_perspectives', arguments: {} })));
+        requests.push(req);
+      }
+      await started;
+      for (const req of requests) req.destroy();
+      let available = false;
+      for (let attempt = 0; attempt < 40 && !available; attempt++) {
+        await Bun.sleep(25);
+        available = (await send(port, 'POST', '/mcp', rpc(20, 'tools/list'))).status === 200;
+      }
+      expect(available).toBe(true);
+      const blocked = await send(
+        port,
+        'POST',
+        '/mcp',
+        rpc(21, 'tools/call', { name: 'list_perspectives', arguments: {} })
+      );
+      expect(JSON.parse(blocked.body).result).toMatchObject({
+        isError: true,
+        content: [{ type: 'text', text: 'Too many concurrent OmniFocus operations' }],
+      });
+      child.send('release');
+      await once(child, 'message');
+      const next = send(
+        port,
+        'POST',
+        '/mcp',
+        rpc(23, 'tools/call', { name: 'list_perspectives', arguments: {} })
+      );
+      await once(child, 'message');
+      child.send('release');
+      expect(JSON.parse((await next).body).result.content).toEqual([
+        { type: 'text', text: JSON.stringify([{ id: 'Inbox', name: 'Inbox' }], null, 2) },
+      ]);
+    } finally {
+      for (const req of requests) req.destroy();
+      child.kill();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });
