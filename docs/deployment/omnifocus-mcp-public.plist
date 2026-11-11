@@ -9,7 +9,7 @@
     <string>--allow-host</string><string>omnifocus.stephendolan.com</string>
     <string>--mode</string><string>full</string>
     <string>--access-team-domain</string><string>https://dolanfamily.cloudflareaccess.com</string>
-    <string>--access-audience</string><string>REPLACE_WITH_ACCESS_APPLICATION_AUDIENCE</string>
+    <string>--access-audience</string><string>b23d3a0ad7436c6f210077911553fe2fd841d4417b8f8004349d431180beee8a</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>

@@ -61,8 +61,8 @@ Tailscale Serve 443 → 127.0.0.1:38886 and 8443 → 127.0.0.1:3939.
 The public service is `com.stephendolan.omnifocus-mcp-public`, bound only to
 127.0.0.1:3940, allowing Host `omnifocus.stephendolan.com`. Its configured issuer is
 `https://dolanfamily.cloudflareaccess.com`. The application audience is configuration
-supplied by the Access application owner. The marked placeholder in the template
-cannot authenticate real application tokens; replace it before public acceptance.
+supplied by the Access application owner and is recorded in the public LaunchAgent
+template. Changing the audience does not require rebuilding the package.
 
 Install a pinned npm artifact in:
 
@@ -78,12 +78,21 @@ and `__INSTALL_ROOT__`, render the public plist into `~/Library/LaunchAgents/`,
 and use `launchctl bootstrap gui/$(id -u) <plist>`. Reload only this public service
 when changing its audience or mode. Keep the installation directory mode 700.
 
-Prepare `com.stephendolan.omnifocus-cloudflared` from the separate template. Keep
-its rendered plist outside LaunchAgents until the securely transferred token is
-present at `<install-root>/tunnel-token`, mode 600. Never put the token in a plist,
-command argument, repository, or chat. Do not create a dummy token. The remotely
-managed tunnel routes the host to `http://127.0.0.1:3940`, with a final 404 ingress.
-The external endpoint is `https://omnifocus.stephendolan.com/mcp`.
+Prepare `com.stephendolan.omnifocus-cloudflared` from the separate template,
+substituting `__TOKEN_DIRECTORY__` with `~/.cloudflared` expanded to an absolute
+path. Keep that directory mode 700 and the agent unloaded until the securely
+transferred token is present at `~/.cloudflared/omnifocus-tunnel.token`, mode 600.
+The template also waits for the token path before starting if launchd loads it
+at login. Never put the token in a plist, command argument, repository, or chat.
+Do not create a dummy token. The remotely managed tunnel routes the host to
+`http://127.0.0.1:3940`, with a final 404 ingress. The external endpoint is
+`https://omnifocus.stephendolan.com/mcp`.
+
+For encrypted token handoff, generate a one-time RSA-4096 private key at
+`~/.cloudflared/transfer-key.pem`, mode 600. Share only its public key. Use
+RSA-OAEP with SHA-256 and MGF1-SHA-256, transfer the ciphertext as base64, and
+decrypt directly into the mode-600 token file. Verify cloudflared can read the
+token before removing the transfer private key.
 
 ## Health and macOS automation
 
