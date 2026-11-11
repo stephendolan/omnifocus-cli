@@ -106,6 +106,20 @@ TCC database, reset all grants, or re-sign runtimes to evade permission handling
 A stuck permission-dialog response in a TCC sample is evidence of queued native
 permission work, not proof that any particular grant is missing.
 
+Different versioned Node paths can require separate Automation approvals even
+when both prompts say `node`. The public Node 26.13.0 runtime and the fallback's
+Node 24.22.0 runtime each require access to OmniFocus. After consent, verify a
+fresh MCP process can repeat the read without another prompt. A TCC grant-creation
+event, a successful no-prompt Apple Events preflight, and successful fresh-process
+reads establish that consent persisted; direct access to the protected TCC
+database is not required.
+
+A successful signal command does not prove a service restarted. Verify its PID
+and launch time before calling a check post-restart. TCC enables
+`EnablePressuredExit`; the Mac's `launchd.plist(5)` manual documents that these
+jobs can handle SIGTERM without exiting. Preserve this distinction when a
+permission-dialog wait survives the signal.
+
 Validate the public origin locally with missing and forged assertions (401), then
 with a real Access-issued assertion for the exact configured audience. Use a
 private token file and a test client that never prints its contents. Repeat real
