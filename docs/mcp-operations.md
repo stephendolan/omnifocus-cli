@@ -144,6 +144,13 @@ Check TCC attribution and fresh-process reads for that exact path without
 interacting with consent dialogs or changing grants. Direct access to the
 protected TCC database is not required.
 
+An absolute Node command does not guarantee TCC responsibility: a CLI launched
+from a provider can inherit the hosting process's responsible executable. Check
+the attribution chain before treating that route as approved. Use the existing
+approved LaunchAgent listener for live reads. If a listener read also times out,
+stop live calls and leave the permission queue and dialogs untouched; changing
+Node argv or retrying a write does not establish recovery.
+
 A successful signal command does not prove a service restarted. Verify its PID
 and launch time before calling a check post-restart. TCC enables
 `EnablePressuredExit`; the Mac's `launchd.plist(5)` manual documents that these
