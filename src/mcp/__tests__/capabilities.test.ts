@@ -25,6 +25,7 @@ const excluded = [
   'create_tag',
   'update_tag',
   'delete_tag',
+  'create_folder',
   'get_perspective_tasks',
 ];
 
@@ -38,7 +39,7 @@ describe('capability modes', () => {
     const client = await connect();
     clients.push(client);
     const tools = (await client.listTools()).tools.map((tool) => tool.name);
-    expect(tools.length).toBe(26);
+    expect(tools.length).toBe(27);
     expect(tools).toEqual(expect.arrayContaining(excluded));
     expect(client.getServerVersion()).toEqual({ name: 'omnifocus', version: packageJson.version });
   });
@@ -106,5 +107,53 @@ describe('capability modes', () => {
     ]);
     expect(create.mock.calls).toEqual([[{ name: 'Disposable', flagged: true }]]);
     create.mockRestore();
+  });
+
+  it('creates folders in full mode and advertises them in search', async () => {
+    const of = new OmniFocus();
+    const folder = {
+      id: 'folder-1',
+      name: 'Work',
+      status: 'active' as const,
+      effectivelyActive: true,
+      parent: null,
+      projectCount: 0,
+      remainingProjectCount: 0,
+      folderCount: 0,
+      children: [],
+      alreadyExisted: false,
+    };
+    const create = spyOn(of, 'createFolder').mockResolvedValue(folder);
+    try {
+      const client = await connect('full', of);
+      clients.push(client);
+      const result = await client.callTool({ name: 'create_folder', arguments: { name: 'Work' } });
+      expect(result.content).toEqual([{ type: 'text', text: JSON.stringify(folder, null, 2) }]);
+      expect(create.mock.calls).toEqual([['Work']]);
+      const search = await client.callTool({
+        name: 'search_tools',
+        arguments: { query: '^create_folder$' },
+      });
+      expect(search.content).toEqual([
+        {
+          type: 'text',
+          text: JSON.stringify(
+            {
+              tools: [
+                {
+                  name: 'create_folder',
+                  description:
+                    'Create a top-level folder, or return an existing folder with the same name',
+                },
+              ],
+            },
+            null,
+            2
+          ),
+        },
+      ]);
+    } finally {
+      create.mockRestore();
+    }
   });
 });

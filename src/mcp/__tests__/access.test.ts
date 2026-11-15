@@ -77,7 +77,7 @@ describe('Access authentication at the HTTP origin', () => {
     for (const host of ['localhost', '127.0.0.1', 'omnifocus.stephendolan.com']) {
       const result = await call(port, host, assertion);
       expect(result.status).toBe(200);
-      expect(result.body.result.tools.length).toBe(26);
+      expect(result.body.result.tools.length).toBe(27);
     }
     expect(fetchMock.mock.calls[0][0].toString()).toBe(`${issuer}/cdn-cgi/access/certs`);
   });
