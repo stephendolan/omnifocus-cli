@@ -123,6 +123,10 @@ export interface FolderFilters {
   includeDropped?: boolean;
 }
 
+export interface CreateFolderResult extends Folder {
+  alreadyExisted: boolean;
+}
+
 export interface TagListOptions {
   unusedDays?: number;
   sortBy?: 'name' | 'usage' | 'activity';

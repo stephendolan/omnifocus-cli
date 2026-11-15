@@ -6,7 +6,18 @@ import type { FolderFilters } from '../types.js';
 
 export function createFolderCommand(): Command {
   const command = new Command('folder');
-  command.description('View OmniFocus folder hierarchy');
+  command.description('Manage OmniFocus folders');
+
+  command
+    .command('create <name>')
+    .description('Create a top-level folder, or return an existing folder with the same name')
+    .action(
+      withErrorHandling(async (name) => {
+        const of = new OmniFocus();
+        const folder = await of.createFolder(name);
+        outputJson(folder);
+      })
+    );
 
   command
     .command('list')

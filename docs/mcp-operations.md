@@ -26,8 +26,8 @@ installed artifact's `--version` before declaring currency.
 
 ## Capability and authentication boundaries
 
-Full mode is the default (26 tools). `--mode read-only` registers 16 tools and
-excludes all nine create/update/delete tools and `get_perspective_tasks`, which
+Full mode is the default (27 tools). `--mode read-only` registers 16 tools and
+excludes all ten create/update/delete tools and `get_perspective_tasks`, which
 changes the user's front window. The same allowlist filters `search_tools`.
 Excluded tools are unregistered and direct calls fail. A listener owns its mode;
 caller claims do not select a mode. Issue a credential for a separate read-only
@@ -55,7 +55,7 @@ settles. The limit applies across all requests to that listener.
 ## Mac Mini public deployment
 
 The private fallback is independent: `com.stephendolan.omnifocus-mcp` listens on
-127.0.0.1:3939. Preserve its plist, running process, and installed artifact. Preserve
+127.0.0.1:3939. Preserve its plist and absolute Node binary path during upgrades. Preserve
 Tailscale Serve 443 → 127.0.0.1:38886 and 8443 → 127.0.0.1:3939.
 
 The public service is `com.stephendolan.omnifocus-mcp-public`, bound only to
@@ -67,16 +67,37 @@ template. Changing the audience does not require rebuilding the package.
 Install a pinned npm artifact in:
 
 ```text
-~/Library/Application Support/omnifocus-mcp-public/releases/2.8.0/
+~/Library/Application Support/omnifocus-mcp-public/releases/2.9.0/
 ```
 
 Use `npm install --prefix <release-directory> --ignore-scripts --save-exact
-@stephendolan/omnifocus-cli@2.8.0`, then run its `dist/cli.js` with an absolute,
+@stephendolan/omnifocus-cli@2.9.0`, then run its `dist/cli.js` with an absolute,
 versioned Node path. The existing global installation remains the fallback's
 artifact. Templates are in [deployment/](deployment/). Substitute `__NODE_PATH__`
 and `__INSTALL_ROOT__`, render the public plist into `~/Library/LaunchAgents/`,
 and use `launchctl bootstrap gui/$(id -u) <plist>`. Reload only this public service
 when changing its audience or mode. Keep the installation directory mode 700.
+
+For an upgrade with fixed LaunchAgent paths, install the pinned npm artifact into
+the public agent's existing prefix (which can retain an older version in its
+directory name). Update the fallback's global package from that same npm artifact,
+preserving unrelated global packages. Do not change either plist's Node or CLI
+paths. Both agents must use
+`/Users/stephen/.local/share/mise/installs/node/26.13.0/bin/node`.
+Restart both listeners after updating their artifacts:
+
+```sh
+launchctl kickstart -k gui/$(id -u)/com.stephendolan.omnifocus-mcp-public
+launchctl kickstart -k gui/$(id -u)/com.stephendolan.omnifocus-mcp
+```
+
+Verify changed PIDs and launch times, then initialize each localhost endpoint and
+check version `2.9.0` and its tool list. Full mode has 27 tools; read-only has 16.
+The public endpoint requires a real Access assertion even on localhost.
+
+`folder create <name>` and the full-mode `create_folder` tool return the folder
+fields plus `alreadyExisted`. They match exact top-level names, including dropped
+folders, and reuse a match without changing it. Nested names do not match.
 
 Prepare `com.stephendolan.omnifocus-cloudflared` from the separate template,
 substituting `__TOKEN_DIRECTORY__` with `~/.cloudflared` expanded to an absolute
@@ -116,12 +137,12 @@ A stuck permission-dialog response in a TCC sample is evidence of queued native
 permission work, not proof that any particular grant is missing.
 
 Different versioned Node paths can require separate Automation approvals even
-when both prompts say `node`. The public Node 26.13.0 runtime and the fallback's
-Node 24.22.0 runtime each require access to OmniFocus. After consent, verify a
-fresh MCP process can repeat the read without another prompt. A TCC grant-creation
-event, a successful no-prompt Apple Events preflight, and successful fresh-process
-reads establish that consent persisted; direct access to the protected TCC
-database is not required.
+when both prompts say `node`. The approved runtime for both listeners and every
+live CLI call is `/Users/stephen/.local/share/mise/installs/node/26.13.0/bin/node`.
+Do not use bare `node`, a mise alias, or another binary for calls into OmniFocus.
+Check TCC attribution and fresh-process reads for that exact path without
+interacting with consent dialogs or changing grants. Direct access to the
+protected TCC database is not required.
 
 A successful signal command does not prove a service restarted. Verify its PID
 and launch time before calling a check post-restart. TCC enables

@@ -113,7 +113,14 @@ of perspective view "Forecast"      # View tasks in perspective
 of folder list                      # List all folders
 of folder list --dropped            # Include dropped
 of folder view "Work"               # View folder details
+of folder create "Work"             # Create or reuse a top-level folder
 ```
+
+`folder create` matches exact top-level names, including dropped folders. It
+returns the folder fields plus `alreadyExisted`: `false` for a new folder and
+`true` when reusing one. Nested folders with the same name do not match. The
+`create_folder` MCP tool accepts `{ "name": "Work" }` with the same behavior and
+is available in full mode only.
 
 ### Statistics
 
@@ -147,7 +154,7 @@ tailscale serve --bg --https=8443 http://127.0.0.1:3939
 claude mcp add --transport http omnifocus https://<machine>.<tailnet>.ts.net:8443/mcp
 ```
 
-Full mode is the default (26 tools). Use `--mode read-only` for the 16-tool read-only allowlist; direct calls to excluded tools are rejected, including `get_perspective_tasks` because it changes the front window.
+Full mode is the default (27 tools). Use `--mode read-only` for the 16-tool read-only allowlist; direct calls to excluded tools are rejected, including `get_perspective_tasks` because it changes the front window.
 
 For an authenticated public reverse proxy, require Cloudflare Access JWT validation at the origin:
 

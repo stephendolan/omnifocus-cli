@@ -19,6 +19,7 @@ import type {
   UpdateTagOptions,
   Folder,
   FolderFilters,
+  CreateFolderResult,
 } from '../types.js';
 
 const execFileAsync = promisify(execFile);
@@ -132,13 +133,14 @@ export class OmniFocus {
       return matches[0];
     }
 
-    function findByName(collection, name, typeName) {
+    function findByName(collection, name, typeName, required = true) {
       for (const item of collection) {
         if (item.name === name) {
           return item;
         }
       }
-      throw new Error(typeName + " not found: " + name);
+      if (required) throw new Error(typeName + " not found: " + name);
+      return null;
     }
 
     function assignTags(target, tagNames) {
@@ -1014,6 +1016,21 @@ export class OmniFocus {
           projectsWithMostTasks,
           projectsWithMostRemaining
         });
+      })();
+    `;
+
+    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
+    return JSON.parse(output);
+  }
+
+  async createFolder(name: string): Promise<CreateFolderResult> {
+    const omniScript = `
+      ${this.OMNI_HELPERS}
+      (() => {
+        const name = "${this.escapeString(name)}";
+        const existing = findByName(folders, name, "Folder", false);
+        const folder = existing || new Folder(name, library.ending);
+        return JSON.stringify({ ...serializeFolder(folder), alreadyExisted: existing !== null });
       })();
     `;
 

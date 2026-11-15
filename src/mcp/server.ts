@@ -31,6 +31,10 @@ const toolRegistry = [
   { name: 'get_tag_stats', description: 'Get tag statistics' },
   { name: 'list_folders', description: 'List all folders' },
   { name: 'get_folder', description: 'Get a specific folder by ID or name' },
+  {
+    name: 'create_folder',
+    description: 'Create a top-level folder, or return an existing folder with the same name',
+  },
 ];
 
 export interface McpServerOptions {
@@ -337,6 +341,15 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
       },
       async ({ idOrName, includeDropped }) =>
         jsonResponse(await execute(() => of.getFolder(idOrName, { includeDropped })))
+    );
+  }
+
+  if (canUseTool('create_folder', mode)) {
+    server.tool(
+      'create_folder',
+      'Create a top-level folder, or return an existing folder with the same name',
+      { name: z.string().describe('Top-level folder name (exact match)') },
+      async ({ name }) => jsonResponse(await execute(() => of.createFolder(name)))
     );
   }
 
