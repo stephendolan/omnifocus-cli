@@ -67,11 +67,11 @@ template. Changing the audience does not require rebuilding the package.
 Install a pinned npm artifact in:
 
 ```text
-~/Library/Application Support/omnifocus-mcp-public/releases/2.9.0/
+~/Library/Application Support/omnifocus-mcp-public/releases/2.10.0/
 ```
 
 Use `npm install --prefix <release-directory> --ignore-scripts --save-exact
-@stephendolan/omnifocus-cli@2.9.0`, then run its `dist/cli.js` with an absolute,
+@stephendolan/omnifocus-cli@2.10.0`, then run its `dist/cli.js` with an absolute,
 versioned Node path. The existing global installation remains the fallback's
 artifact. Templates are in [deployment/](deployment/). Substitute `__NODE_PATH__`
 and `__INSTALL_ROOT__`, render the public plist into `~/Library/LaunchAgents/`,
@@ -92,7 +92,7 @@ launchctl kickstart -k gui/$(id -u)/com.stephendolan.omnifocus-mcp
 ```
 
 Verify changed PIDs and launch times, then initialize each localhost endpoint and
-check version `2.9.0` and its tool list. Full mode has 27 tools; read-only has 16.
+check version `2.10.0` and its tool list. Full mode has 27 tools; read-only has 16.
 The public endpoint requires a real Access assertion even on localhost.
 
 `folder create <name>` and the full-mode `create_folder` tool return the folder
@@ -123,33 +123,36 @@ successful `list_perspectives` and a task read, with valid parsed tool content.
 `get_inbox_count` traverses and serializes the inbox; it is not a cheap liveness
 probe. Avoid `get_perspective_tasks` for health because it switches the user's view.
 
-On a timeout, inspect the deployed LaunchAgent and its process identity. Compare
-with a bounded direct `osascript` call evaluating `1+1` in OmniFocus. If that also
-hangs, inspect native Apple Events delivery and TCC rather than increasing the
-timeout or changing task filters. A working application version property does
-not prove that protected automation events work.
+Agent contexts (BB threads and shells under unapproved ancestors) must NEVER
+probe OmniFocus with `node dist/cli.js`, `osascript`, or JXA. Live reads route
+through the existing localhost MCP listeners. If a listener read times out,
+stop live calls and leave dialogs and the permission queue untouched. Do not
+interact with a locked session, reset grants, or relaunch OmniFocus unattended.
 
-macOS attributes child `osascript` calls to the responsible executable, which can
-be the LaunchAgent's Node binary rather than a terminal. Identify that executable
-from TCC logs before asking the user to approve Automation access. Do not edit the
-TCC database, reset all grants, or re-sign runtimes to evade permission handling.
-A stuck permission-dialog response in a TCC sample is evidence of queued native
-permission work, not proof that any particular grant is missing.
+macOS attributes child Apple Events to a responsible ancestor. An absolute Node
+path does not guarantee attribution to that Node binary: a BB thread can inherit
+the BB daemon's unapproved TCC identity. Two November 2026 consent dialogs from
+unapproved contexts wedged all OmniFocus script access until OmniFocus was
+relaunched. Both running listeners retain the approved path
+`/Users/stephen/.local/share/mise/installs/node/26.13.0/bin/node` until attended
+launcher cutover. Do not run mise commands during staging or deployment: they
+can prune installed runtimes.
 
-Different versioned Node paths can require separate Automation approvals even
-when both prompts say `node`. The approved runtime for both listeners and every
-live CLI call is `/Users/stephen/.local/share/mise/installs/node/26.13.0/bin/node`.
-Do not use bare `node`, a mise alias, or another binary for calls into OmniFocus.
-Check TCC attribution and fresh-process reads for that exact path without
-interacting with consent dialogs or changing grants. Direct access to the
-protected TCC database is not required.
+The only sanctioned direct check in an agent context is `of doctor` without
+`--request-consent`. It calls `AEDeterminePermissionToAutomateTarget` for
+`com.omnigroup.OmniFocus4`, with wildcard event class/ID and
+`askUserIfNeeded=false`; it sends no Apple event and cannot prompt. The same
+preflight guards every operation before `evaluateJavascript`. Status -1744
+returns `automation_consent_required`; -1743 returns `automation_denied`. CLI
+errors exit 1 and include `statusCode: 403`, `osStatus`, and `execPath`; MCP
+returns the typed JSON with `isError: true`. Other nonzero preflight statuses
+also stop the operation (for example, OmniFocus not running). `execPath` names
+the CLI runtime, not necessarily the ancestor TCC considers responsible.
 
-An absolute Node command does not guarantee TCC responsibility: a CLI launched
-from a provider can inherit the hosting process's responsible executable. Check
-the attribution chain before treating that route as approved. Use the existing
-approved LaunchAgent listener for live reads. If a listener read also times out,
-stop live calls and leave the permission queue and dialogs untouched; changing
-Node argv or retrying a write does not establish recovery.
+`of doctor --request-consent` is the only path that sets `askUserIfNeeded=true`.
+It is reserved for attended setup in the intended client context; never run it
+from an agent context. Tests use bridge and executable mocks, never live Apple
+events or real `osascript`.
 
 A successful signal command does not prove a service restarted. Verify its PID
 and launch time before calling a check post-restart. TCC enables
@@ -163,3 +166,48 @@ private token file and a test client that never prints its contents. Repeat real
 reads through Tailscale 8443 and compare the original plist and Serve configuration
 with the saved inventory. Valid local test signatures prove verifier behavior;
 they do not prove the real Access application or tunnel configuration.
+
+## Staged launcher and runtime (no cutover)
+
+The inert app at `~/Applications/OmniFocus MCP.app` is built from
+[launcher/](deployment/launcher/). Its bundle identifier is
+`com.stephendolan.omnifocus-mcp`; it is background-only, declares an Automation
+usage description, and carries `com.apple.security.automation.apple-events`.
+Build to a fresh absolute output path with:
+
+```sh
+docs/deployment/launcher/build.sh "/absolute/output/OmniFocus MCP.app"
+```
+
+The build uses hardened runtime, an Apple timestamp, and only Developer ID
+Application: Stephen Dolan (J4VQ7X4A9Q), certificate
+`1725FF6181DF68C174D18DEA59BB585DAB737550`. Verify with `codesign -d -r-` and
+`codesign --verify --strict`. The launcher uses `posix_spawn`, forwards SIGTERM,
+SIGINT, and SIGHUP, and exits with the child's exit code (128 + signal for a
+signal termination). Node and JavaScript remain outside the bundle. A stable
+signed bundle provides the intended TCC client identity across runtime upgrades;
+actual attribution and initial consent must be verified during attended cutover.
+
+The official `node-v26.13.0-darwin-arm64.tar.gz` from
+[nodejs.org](https://nodejs.org/dist/v26.13.0/) is checked against that release's
+`SHASUMS256.txt` before extraction to
+`~/Library/Application Support/omnifocus-mcp/runtime/node-v26.13.0/`. Its SHA-256
+is `d38bd5e5a2ddce6bbb5ce45e46e208337da4d51fffe611e567fd32073d6439f6`.
+Verify the unpacked `bin/node` with `codesign --verify`; do not re-sign Node.
+
+Future listener definitions are staged at
+[com.stephendolan.omnifocus-mcp.staged.plist](deployment/com.stephendolan.omnifocus-mcp.staged.plist)
+and
+[com.stephendolan.omnifocus-mcp-public.staged.plist](deployment/com.stephendolan.omnifocus-mcp-public.staged.plist).
+Their arguments prepend the launcher and staged Node to the existing CLI entry
+and listener arguments. They add `AssociatedBundleIdentifiers` for the launcher.
+These are machine-specific staged files, **not installed LaunchAgents**. Do not
+bootstrap them, run the app, or point either live listener at the staged runtime
+until Stephen is present for cutover and any initial consent.
+
+For the 2.10.0 deployment, preserve both live plists byte for byte and update
+their installed CLI artifacts. Rebuild the repository `dist`, then kickstart each
+listener once using the commands above. Verify only HTTP initialization on 3939
+(version 2.10.0) and unauthenticated rejection on 3940 (401), and confirm both
+live plists still pin the mise Node 26.13.0 path with `plutil`. Do not stop or
+change the tunnel. Transport verification does not prove live OmniFocus access.

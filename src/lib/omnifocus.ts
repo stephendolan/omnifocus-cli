@@ -1,5 +1,6 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { AutomationPermissionError, consentPreflight, OMNIFOCUS_BUNDLE_ID } from './consent.js';
 import type {
   Task,
   Project,
@@ -258,6 +259,9 @@ export class OmniFocus {
       const { stdout } = await osascript;
       return stdout.trim();
     } catch (error) {
+      const stderr = (error as { stderr?: string }).stderr;
+      const permission = stderr?.match(/OF_AUTOMATION_PERMISSION:(-?\d+)/);
+      if (permission) throw new AutomationPermissionError(Number(permission[1]));
       if ((error as NodeJS.ErrnoException & { killed?: boolean }).killed) {
         throw new Error(
           `OmniFocus automation did not respond within ${timeoutMs}ms. Check OmniFocus and macOS Automation permissions in this login session.`,
@@ -279,11 +283,25 @@ export class OmniFocus {
 
   private wrapOmniScript(omniScript: string): string {
     return `
+      ${consentPreflight()}
       const app = Application('OmniFocus');
       app.includeStandardAdditions = true;
       const result = app.evaluateJavascript(${JSON.stringify(omniScript.trim())});
       result;
     `.trim();
+  }
+
+  async checkConsent(requestConsent = false) {
+    const result = await this.executeJXA(`
+      ${consentPreflight(requestConsent)}
+      JSON.stringify({ status: 'granted', osStatus: 0 });
+    `);
+    return {
+      ...JSON.parse(result),
+      execPath: process.execPath,
+      target: OMNIFOCUS_BUNDLE_ID,
+      promptRequested: requestConsent,
+    };
   }
 
   private buildTaskFilters(filters: TaskFilters): string {

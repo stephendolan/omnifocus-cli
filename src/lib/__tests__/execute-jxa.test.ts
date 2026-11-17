@@ -1,7 +1,18 @@
-import { describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { OmniFocus } from '../omnifocus.js';
+import { mockJxaEnvironment } from './fixtures/mock-jxa.js';
 
-describe.skipIf(process.platform !== 'darwin')('executeJXA', () => {
+describe('executeJXA (mock executable, no Apple events)', () => {
+  const originalPath = process.env.PATH;
+  let fixture: Awaited<ReturnType<typeof mockJxaEnvironment>>;
+  beforeAll(async () => {
+    fixture = await mockJxaEnvironment();
+    process.env.PATH = fixture.env.PATH;
+  });
+  afterAll(async () => {
+    process.env.PATH = originalPath;
+    await fixture.cleanup();
+  });
   it('reports an actionable automation timeout', async () => {
     const of = new OmniFocus();
     await expect(

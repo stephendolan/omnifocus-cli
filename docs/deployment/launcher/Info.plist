@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.stephendolan.omnifocus-mcp</string>
+    <key>CFBundleExecutable</key>
+    <string>omnifocus-mcp-launcher</string>
+    <key>CFBundleName</key>
+    <string>OmniFocus MCP</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>2.10.0</string>
+    <key>CFBundleVersion</key>
+    <string>2.10.0</string>
+    <key>LSBackgroundOnly</key>
+    <true/>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>OmniFocus MCP uses Automation to read and manage your OmniFocus tasks through its configured MCP listeners.</string>
+</dict>
+</plist>

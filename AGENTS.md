@@ -29,9 +29,11 @@ Date options follow `due` and `defer`: the CLI parses them with `parseDateTime()
 
 - `bun test` is the only runner; tests import from `bun:test`. `pipe-truncation.test.ts` runs `dist/cli.js`, so build first.
 - Bun's runner turns any `process.exitCode` set during a test into the suite's exit code, even after a reset, so assert exit behavior in a child process.
-- CI runs on Ubuntu without `osascript`; tests that need it use `describe.skipIf(process.platform !== 'darwin')`.
-- `of` on `PATH` is the user's installed release. Exercise the working tree with `node dist/cli.js` after `bun run build`.
-- Every command runs against the user's real OmniFocus database, which syncs to their devices. Verify with read-only commands (`list`, `view`, `count`, `stats`); `perspective view` also switches their window.
+- CI runs on Ubuntu without `osascript`. Tests must mock the Apple Events bridge or executable; never launch real `osascript` in the test suite.
+- `of` on `PATH` is the user's installed release. Build the working tree with `bun run build`; direct `--help` and `--version` checks do not contact OmniFocus.
+- Agent contexts (including BB threads and shells under unapproved ancestors) must NEVER probe OmniFocus with `node dist/cli.js`, `osascript`, or JXA. Children inherit TCC responsibility from an ancestor; even an absolute approved Node path can be attributed to the unapproved BB daemon. Two November 2026 consent dialogs wedged all OmniFocus script access until OmniFocus was relaunched.
+- Route live reads through the existing localhost MCP listeners. Every read reaches the user's real synced database; `get_perspective_tasks` also switches their window. If a listener times out, stop live calls and leave dialogs untouched.
+- The only sanctioned direct consent check is `of doctor` without `--request-consent`. It calls the permission preflight with `askUserIfNeeded=false`, sends no Apple event, and cannot prompt. Never run `of doctor --request-consent` from an agent context.
 
 ## Dependencies
 

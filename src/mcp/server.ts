@@ -2,6 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { OmniFocus } from '../lib/omnifocus.js';
+import { AutomationPermissionError } from '../lib/consent.js';
+import { errorResponse } from '../lib/errors.js';
 import packageJson from '../../package.json' with { type: 'json' };
 import { canUseTool, type CapabilityMode } from './capabilities.js';
 
@@ -51,6 +53,14 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
   const mode = options.mode ?? 'full';
   const of = options.omniFocus ?? new OmniFocus();
   const execute = options.execute ?? (<T>(operation: () => Promise<T>) => operation());
+  async function respond<T>(operation: () => Promise<T>) {
+    try {
+      return jsonResponse(await execute(operation));
+    } catch (error) {
+      if (!(error instanceof AutomationPermissionError)) throw error;
+      return { ...jsonResponse(errorResponse(error)), isError: true };
+    }
+  }
   const server = new McpServer({
     name: 'omnifocus',
     version: packageJson.version,
@@ -67,7 +77,7 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
         project: z.string().optional().describe('Filter by project name'),
         tag: z.string().optional().describe('Filter by tag name'),
       },
-      async (filters) => jsonResponse(await execute(() => of.listTasks(filters)))
+      async (filters) => respond(() => of.listTasks(filters))
     );
   }
 
@@ -76,7 +86,7 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
       'get_task',
       'Get a specific task by ID or name',
       { idOrName: z.string().describe('Task ID or name') },
-      async ({ idOrName }) => jsonResponse(await execute(() => of.getTask(idOrName)))
+      async ({ idOrName }) => respond(() => of.getTask(idOrName))
     );
   }
 
@@ -95,7 +105,7 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
         flagged: z.boolean().optional().describe('Flag the task'),
         estimatedMinutes: z.number().optional().describe('Estimated duration in minutes'),
       },
-      async (options) => jsonResponse(await execute(() => of.createTask(options)))
+      async (options) => respond(() => of.createTask(options))
     );
   }
 
@@ -117,8 +127,7 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
         completed: z.boolean().optional().describe('Mark complete/incomplete'),
         dropped: z.boolean().optional().describe('Mark dropped/undropped'),
       },
-      async ({ idOrName, ...options }) =>
-        jsonResponse(await execute(() => of.updateTask(idOrName, options)))
+      async ({ idOrName, ...options }) => respond(() => of.updateTask(idOrName, options))
     );
   }
 
@@ -128,8 +137,10 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
       'Delete a task',
       { idOrName: z.string().describe('Task ID or name') },
       async ({ idOrName }) => {
-        await execute(() => of.deleteTask(idOrName));
-        return jsonResponse({ deleted: true });
+        return respond(async () => {
+          await of.deleteTask(idOrName);
+          return { deleted: true };
+        });
       }
     );
   }
@@ -139,25 +150,25 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
       'search_tasks',
       'Search tasks by name or note content',
       { query: z.string().describe('Search query') },
-      async ({ query }) => jsonResponse(await execute(() => of.searchTasks(query)))
+      async ({ query }) => respond(() => of.searchTasks(query))
     );
   }
 
   if (canUseTool('get_task_stats', mode)) {
     server.tool('get_task_stats', 'Get task statistics', {}, async () =>
-      jsonResponse(await execute(() => of.getTaskStats()))
+      respond(() => of.getTaskStats())
     );
   }
 
   if (canUseTool('list_inbox', mode)) {
     server.tool('list_inbox', 'List remaining inbox tasks, including subtasks', {}, async () =>
-      jsonResponse(await execute(() => of.listInboxTasks()))
+      respond(() => of.listInboxTasks())
     );
   }
 
   if (canUseTool('get_inbox_count', mode)) {
     server.tool('get_inbox_count', 'Get the number of remaining inbox tasks', {}, async () =>
-      jsonResponse({ count: await execute(() => of.getInboxCount()) })
+      respond(async () => ({ count: await of.getInboxCount() }))
     );
   }
 
@@ -170,7 +181,7 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
         status: z.enum(['active', 'on hold', 'dropped']).optional().describe('Filter by status'),
         folder: z.string().optional().describe('Filter by folder name'),
       },
-      async (filters) => jsonResponse(await execute(() => of.listProjects(filters)))
+      async (filters) => respond(() => of.listProjects(filters))
     );
   }
 
@@ -179,7 +190,7 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
       'get_project',
       'Get a specific project by ID or name',
       { idOrName: z.string().describe('Project ID or name') },
-      async ({ idOrName }) => jsonResponse(await execute(() => of.getProject(idOrName)))
+      async ({ idOrName }) => respond(() => of.getProject(idOrName))
     );
   }
 
@@ -198,7 +209,7 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
         tags: z.array(z.string()).optional().describe('Tags to assign'),
         status: z.enum(['active', 'on hold', 'dropped']).optional().describe('Initial status'),
       },
-      async (options) => jsonResponse(await execute(() => of.createProject(options)))
+      async (options) => respond(() => of.createProject(options))
     );
   }
 
@@ -215,8 +226,7 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
         tags: z.array(z.string()).optional().describe('Replace tags'),
         status: z.enum(['active', 'on hold', 'dropped']).optional().describe('New status'),
       },
-      async ({ idOrName, ...options }) =>
-        jsonResponse(await execute(() => of.updateProject(idOrName, options)))
+      async ({ idOrName, ...options }) => respond(() => of.updateProject(idOrName, options))
     );
   }
 
@@ -226,21 +236,23 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
       'Delete a project',
       { idOrName: z.string().describe('Project ID or name') },
       async ({ idOrName }) => {
-        await execute(() => of.deleteProject(idOrName));
-        return jsonResponse({ deleted: true });
+        return respond(async () => {
+          await of.deleteProject(idOrName);
+          return { deleted: true };
+        });
       }
     );
   }
 
   if (canUseTool('get_project_stats', mode)) {
     server.tool('get_project_stats', 'Get project statistics', {}, async () =>
-      jsonResponse(await execute(() => of.getProjectStats()))
+      respond(() => of.getProjectStats())
     );
   }
 
   if (canUseTool('list_perspectives', mode)) {
     server.tool('list_perspectives', 'List all available perspectives', {}, async () =>
-      jsonResponse(await execute(() => of.listPerspectives()))
+      respond(() => of.listPerspectives())
     );
   }
 
@@ -251,7 +263,7 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
       {
         name: z.string().describe('Perspective name (e.g., Inbox, Flagged, or custom perspective)'),
       },
-      async ({ name }) => jsonResponse(await execute(() => of.getPerspectiveTasks(name)))
+      async ({ name }) => respond(() => of.getPerspectiveTasks(name))
     );
   }
 
@@ -264,7 +276,7 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
         sortBy: z.enum(['name', 'usage', 'activity']).optional().describe('Sort order'),
         activeOnly: z.boolean().optional().describe('Only count active tasks'),
       },
-      async (options) => jsonResponse(await execute(() => of.listTags(options)))
+      async (options) => respond(() => of.listTags(options))
     );
   }
 
@@ -273,7 +285,7 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
       'get_tag',
       'Get a specific tag by ID or name',
       { idOrName: z.string().describe('Tag ID, name, or path (e.g., "Parent/Child")') },
-      async ({ idOrName }) => jsonResponse(await execute(() => of.getTag(idOrName)))
+      async ({ idOrName }) => respond(() => of.getTag(idOrName))
     );
   }
 
@@ -286,7 +298,7 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
         parent: z.string().optional().describe('Parent tag name or path'),
         status: z.enum(['active', 'on hold', 'dropped']).optional().describe('Initial status'),
       },
-      async (options) => jsonResponse(await execute(() => of.createTag(options)))
+      async (options) => respond(() => of.createTag(options))
     );
   }
 
@@ -299,8 +311,7 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
         name: z.string().optional().describe('New tag name'),
         status: z.enum(['active', 'on hold', 'dropped']).optional().describe('New status'),
       },
-      async ({ idOrName, ...options }) =>
-        jsonResponse(await execute(() => of.updateTag(idOrName, options)))
+      async ({ idOrName, ...options }) => respond(() => of.updateTag(idOrName, options))
     );
   }
 
@@ -310,15 +321,17 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
       'Delete a tag',
       { idOrName: z.string().describe('Tag ID, name, or path') },
       async ({ idOrName }) => {
-        await execute(() => of.deleteTag(idOrName));
-        return jsonResponse({ deleted: true });
+        return respond(async () => {
+          await of.deleteTag(idOrName);
+          return { deleted: true };
+        });
       }
     );
   }
 
   if (canUseTool('get_tag_stats', mode)) {
     server.tool('get_tag_stats', 'Get tag statistics', {}, async () =>
-      jsonResponse(await execute(() => of.getTagStats()))
+      respond(() => of.getTagStats())
     );
   }
 
@@ -327,7 +340,7 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
       'list_folders',
       'List all folders',
       { includeDropped: z.boolean().optional().describe('Include dropped folders') },
-      async (filters) => jsonResponse(await execute(() => of.listFolders(filters)))
+      async (filters) => respond(() => of.listFolders(filters))
     );
   }
 
@@ -340,7 +353,7 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
         includeDropped: z.boolean().optional().describe('Include dropped children'),
       },
       async ({ idOrName, includeDropped }) =>
-        jsonResponse(await execute(() => of.getFolder(idOrName, { includeDropped })))
+        respond(() => of.getFolder(idOrName, { includeDropped }))
     );
   }
 
@@ -349,7 +362,7 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
       'create_folder',
       'Create a top-level folder, or return an existing folder with the same name',
       { name: z.string().describe('Top-level folder name (exact match)') },
-      async ({ name }) => jsonResponse(await execute(() => of.createFolder(name)))
+      async ({ name }) => respond(() => of.createFolder(name))
     );
   }
 
