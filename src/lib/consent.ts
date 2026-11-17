@@ -24,7 +24,7 @@ export function consentPreflight(requestConsent = false): string {
   return `
     ObjC.import('Cocoa');
     ObjC.import('CoreServices');
-    ObjC.bindFunction('AEDeterminePermissionToAutomateTarget', ['int', ['void *', 'uint', 'uint', 'bool']]);
+    ObjC.bindFunction('AEDeterminePermissionToAutomateTarget', ['int', ['void *', 'unsigned int', 'unsigned int', 'bool']]);
     const target = $.NSAppleEventDescriptor.descriptorWithBundleIdentifier('${OMNIFOCUS_BUNDLE_ID}');
     const permissionStatus = $.AEDeterminePermissionToAutomateTarget(target.aeDesc, 0x2a2a2a2a, 0x2a2a2a2a, ${requestConsent});
     if (permissionStatus !== 0) throw new Error('OF_AUTOMATION_PERMISSION:' + permissionStatus);
