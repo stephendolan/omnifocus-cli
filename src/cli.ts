@@ -10,6 +10,7 @@ import { createPerspectiveCommand } from './commands/perspective.js';
 import { createTagCommand } from './commands/tag.js';
 import { createFolderCommand } from './commands/folder.js';
 import { createMcpCommand } from './commands/mcp.js';
+import { createDoctorCommand } from './commands/doctor.js';
 
 const program = new Command();
 
@@ -34,6 +35,7 @@ program.addCommand(createPerspectiveCommand());
 program.addCommand(createTagCommand());
 program.addCommand(createFolderCommand());
 program.addCommand(createMcpCommand());
+program.addCommand(createDoctorCommand());
 
 program.parseAsync().catch((err) => {
   // Set exitCode instead of calling process.exit() so any queued stdout

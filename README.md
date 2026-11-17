@@ -136,6 +136,27 @@ of tag stats                        # Tag statistics
 of search "query"                   # Search tasks
 ```
 
+### Automation consent
+
+```bash
+of doctor                           # Check consent without prompting or sending an Apple event
+```
+
+The doctor reports `status: "granted"`, `osStatus: 0`, `execPath`, `target`, and
+`promptRequested: false` when allowed. Consent failures return a JSON `error`
+with `name` (`automation_consent_required` for -1744 or `automation_denied` for
+-1743), `statusCode: 403`, `osStatus`, and `execPath`, and exit with code 1.
+Every OmniFocus operation runs the same non-prompting preflight before sending
+an Apple event. MCP tools return the same typed JSON with `isError: true`.
+
+`of doctor --request-consent` explicitly allows a macOS consent prompt. Use it
+only during attended setup in the intended client context. Agent contexts must
+never use that flag or probe OmniFocus directly: macOS can attribute child
+processes to an unapproved ancestor, and a queued consent dialog can block all
+OmniFocus scripting. Route live reads through an approved localhost MCP listener.
+The diagnostic `execPath` identifies the CLI runtime; TCC may attribute the call
+to an ancestor instead. See [MCP operations](docs/mcp-operations.md).
+
 ### MCP Server
 
 Run as an MCP server for AI agent integration:

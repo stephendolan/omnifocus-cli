@@ -29,6 +29,11 @@ function folderDatabase() {
   const of = new OmniFocus();
   const execute = mock(async (script: string) =>
     runInNewContext(script, {
+      ObjC: { import() {}, bindFunction() {} },
+      $: {
+        NSAppleEventDescriptor: { descriptorWithBundleIdentifier: () => ({ aeDesc: {} }) },
+        AEDeterminePermissionToAutomateTarget: () => 0,
+      },
       Application: () => ({
         evaluateJavascript: (omniScript: string) =>
           runInNewContext(omniScript, {
