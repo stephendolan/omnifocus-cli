@@ -9,6 +9,16 @@ import { createDoctorCommand } from '../../commands/doctor.js';
 
 const execFileAsync = promisify(execFile);
 
+function nativeBridge() {
+  return {
+    import() {},
+    bindFunction(name: string, signature: unknown) {
+      expect(name).toBe('AEDeterminePermissionToAutomateTarget');
+      expect(signature).toEqual(['int', ['void *', 'unsigned int', 'unsigned int', 'bool']]);
+    },
+  };
+}
+
 describe('Automation consent', () => {
   for (const status of [-1744, -1743, -600]) {
     it(`blocks Apple events on preflight status ${status}`, async () => {
@@ -17,7 +27,7 @@ describe('Automation consent', () => {
       const of = new OmniFocus();
       of['executeJXA'] = async (script) =>
         runInNewContext(script, {
-          ObjC: { import() {}, bindFunction() {} },
+          ObjC: nativeBridge(),
           $: {
             NSAppleEventDescriptor: {
               descriptorWithBundleIdentifier: (id: string) => {
@@ -40,7 +50,7 @@ describe('Automation consent', () => {
     const evaluate = mock(() => '[{"id":"Inbox","name":"Inbox"}]');
     of['executeJXA'] = async (script) =>
       runInNewContext(script, {
-        ObjC: { import() {}, bindFunction() {} },
+        ObjC: nativeBridge(),
         $: {
           NSAppleEventDescriptor: { descriptorWithBundleIdentifier: () => ({ aeDesc: {} }) },
           AEDeterminePermissionToAutomateTarget: () => 0,
@@ -60,7 +70,7 @@ describe('Automation consent', () => {
       const determine = mock(() => 0);
       of['executeJXA'] = async (script) =>
         runInNewContext(script, {
-          ObjC: { import() {}, bindFunction() {} },
+          ObjC: nativeBridge(),
           $: {
             NSAppleEventDescriptor: {
               descriptorWithBundleIdentifier: () => ({ aeDesc: 'target' }),
