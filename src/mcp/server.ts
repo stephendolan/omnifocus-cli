@@ -6,6 +6,8 @@ import { AutomationPermissionError } from '../lib/consent.js';
 import { errorResponse } from '../lib/errors.js';
 import packageJson from '../../package.json' with { type: 'json' };
 import { canUseTool, type CapabilityMode } from './capabilities.js';
+import { loadMcpIcons } from './icons.js';
+import type { Icon } from '@modelcontextprotocol/sdk/types.js';
 
 const toolRegistry = [
   { name: 'list_tasks', description: 'List tasks with optional filtering' },
@@ -41,6 +43,7 @@ const toolRegistry = [
 
 export interface McpServerOptions {
   mode?: CapabilityMode;
+  icons?: Icon[];
   omniFocus?: OmniFocus;
   execute?: <T>(operation: () => Promise<T>) => Promise<T>;
 }
@@ -64,6 +67,7 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
   const server = new McpServer({
     name: 'omnifocus',
     version: packageJson.version,
+    icons: options.icons ?? loadMcpIcons(),
   });
 
   if (canUseTool('list_tasks', mode)) {

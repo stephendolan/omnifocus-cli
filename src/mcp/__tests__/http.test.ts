@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { once } from 'node:events';
 import { request, type Server } from 'node:http';
@@ -58,6 +58,87 @@ function stall(port: number) {
   return req;
 }
 
+describe('MCP icon override', () => {
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    'base64'
+  );
+
+  it('loads the environment override once at listener startup and preserves its PNG bytes', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'of-icon-'));
+    const iconPath = join(dir, 'custom.png');
+    const previous = process.env.OMNIFOCUS_MCP_ICON_PNG;
+    let server: Server | undefined;
+    try {
+      writeFileSync(iconPath, png);
+      process.env.OMNIFOCUS_MCP_ICON_PNG = iconPath;
+      server = await runMcpHttpServer(0);
+      delete process.env.OMNIFOCUS_MCP_ICON_PNG;
+      unlinkSync(iconPath);
+      const port = (server.address() as AddressInfo).port;
+      for (const id of [1, 2]) {
+        const res = await send(
+          port,
+          'POST',
+          '/mcp',
+          rpc(id, 'initialize', {
+            protocolVersion: '2025-06-18',
+            capabilities: {},
+            clientInfo: { name: 'test', version: '1' },
+          })
+        );
+        expect(res.status).toBe(200);
+        const icons = JSON.parse(res.body).result.serverInfo.icons;
+        expect(icons).toEqual([
+          {
+            src: `data:image/png;base64,${png.toString('base64')}`,
+            mimeType: 'image/png',
+            sizes: ['1x1'],
+          },
+        ]);
+      }
+    } finally {
+      if (previous === undefined) delete process.env.OMNIFOCUS_MCP_ICON_PNG;
+      else process.env.OMNIFOCUS_MCP_ICON_PNG = previous;
+      server?.closeAllConnections();
+      server?.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects an unreadable configured icon before starting the listener', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'of-icon-'));
+    const previous = process.env.OMNIFOCUS_MCP_ICON_PNG;
+    try {
+      process.env.OMNIFOCUS_MCP_ICON_PNG = join(dir, 'missing.png');
+      expect(() => runMcpHttpServer(0)).toThrow('ENOENT');
+    } finally {
+      if (previous === undefined) delete process.env.OMNIFOCUS_MCP_ICON_PNG;
+      else process.env.OMNIFOCUS_MCP_ICON_PNG = previous;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects invalid PNG headers and zero dimensions before starting the listener', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'of-icon-'));
+    const iconPath = join(dir, 'invalid.png');
+    const previous = process.env.OMNIFOCUS_MCP_ICON_PNG;
+    try {
+      process.env.OMNIFOCUS_MCP_ICON_PNG = iconPath;
+      const zeroWidth = Buffer.from(png);
+      zeroWidth.writeUInt32BE(0, 16);
+      for (const data of [Buffer.from('not a PNG'), zeroWidth]) {
+        writeFileSync(iconPath, data);
+        expect(() => runMcpHttpServer(0)).toThrow('OMNIFOCUS_MCP_ICON_PNG');
+      }
+    } finally {
+      if (previous === undefined) delete process.env.OMNIFOCUS_MCP_ICON_PNG;
+      else process.env.OMNIFOCUS_MCP_ICON_PNG = previous;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('runMcpHttpServer', () => {
   let server: Server;
   let port: number;
@@ -70,6 +151,28 @@ describe('runMcpHttpServer', () => {
   afterAll(() => {
     server.closeAllConnections();
     server.close();
+  });
+
+  it('includes self-contained icons in the HTTP initialize result', async () => {
+    const res = await send(
+      port,
+      'POST',
+      '/mcp',
+      rpc(0, 'initialize', {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'test', version: '1' },
+      })
+    );
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body).result.serverInfo).toMatchObject({
+      name: 'omnifocus',
+      icons: [128, 64].map((size) => ({
+        src: expect.stringMatching(/^data:image\/png;base64,/),
+        mimeType: 'image/png',
+        sizes: [`${size}x${size}`],
+      })),
+    });
   });
 
   it('lists tools over Streamable HTTP', async () => {
