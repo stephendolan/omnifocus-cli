@@ -181,8 +181,8 @@ For an authenticated public reverse proxy, require Cloudflare Access JWT validat
 
 ```bash
 of mcp --http 3940 --allow-host omnifocus.example.com --mode full \
-  --access-team-domain https://your-team.cloudflareaccess.com \
-  --access-audience YOUR_APPLICATION_AUDIENCE
+  --access-team-domain https://example.cloudflareaccess.com \
+  --access-audience YOUR_ACCESS_AUDIENCE
 ```
 
 Both Access options are required together; `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUDIENCE` provide the same configuration through environment variables. JWT validation applies on localhost too. The origin verifies the RS256 signature using the team's rotating JWKS, exact issuer, application audience, and expiry. Without Access configuration, anyone who can reach the listener can use its configured capabilities; keep that listener on a trusted tailnet.

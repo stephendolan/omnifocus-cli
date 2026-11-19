@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>com.example.omnifocus-mcp-public</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/you/Applications/OmniFocus MCP.app/Contents/MacOS/omnifocus-mcp-launcher</string>
+		<string>/Users/you/Library/Application Support/omnifocus-mcp/runtime/node-v26.13.0/bin/node</string>
+		<string>/Users/you/Library/Application Support/omnifocus-mcp-public/releases/2.8.0/node_modules/@stephendolan/omnifocus-cli/dist/cli.js</string>
+		<string>mcp</string>
+		<string>--http</string>
+		<string>3940</string>
+		<string>--allow-host</string>
+		<string>omnifocus.example.com</string>
+		<string>--mode</string>
+		<string>full</string>
+		<string>--access-team-domain</string>
+		<string>https://example.cloudflareaccess.com</string>
+		<string>--access-audience</string>
+		<string>YOUR_ACCESS_AUDIENCE</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/you/Library/Application Support/omnifocus-mcp-public/public.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/you/Library/Application Support/omnifocus-mcp-public/public.log</string>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>com.example.omnifocus-mcp</string>
+	</array>
+</dict>
+</plist>
