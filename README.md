@@ -167,6 +167,14 @@ of mcp --http                       # Streamable HTTP at http://127.0.0.1:3939/m
 of mcp --http 4000                  # Same, on another port
 ```
 
+The initialize response advertises an original purple checkmark icon as embedded
+128×128 and 64×64 PNG data URIs in `serverInfo.icons`, for both stdio and HTTP.
+Set `OMNIFOCUS_MCP_ICON_PNG` to a readable PNG path to use your own icon. The image
+is loaded at startup and embedded with its actual dimensions; an unreadable file
+or invalid PNG header prevents startup. Clients can load the icon without a
+separate image request. Display and caching depend on the client; reconnecting
+may refresh its icon.
+
 HTTP mode listens on 127.0.0.1 and accepts only `localhost` and `127.0.0.1` as the Host. To reach it from other devices on your tailnet, allow the Mac's MagicDNS name and publish the port with `tailscale serve`:
 
 ```bash

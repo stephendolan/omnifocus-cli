@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createAccessVerifier, type AccessConfig } from './access.js';
 import { createMcpServer, type McpServerOptions } from './server.js';
+import { loadMcpIcons } from './icons.js';
 
 const LOOPBACK_HOSTNAMES = ['localhost', '127.0.0.1'];
 const MAX_IN_FLIGHT_REQUESTS = 16;
@@ -50,6 +51,7 @@ export function runMcpHttpServer(
   allowedHostnames: string[] = [],
   options: McpHttpOptions = {}
 ): Promise<Server> {
+  const icons = options.icons ?? loadMcpIcons();
   const verifyAccess = options.access ? createAccessVerifier(options.access) : undefined;
   const hostnames = new Set([...LOOPBACK_HOSTNAMES, ...allowedHostnames].map(normalizeHostname));
   let inFlight = 0;
@@ -100,7 +102,7 @@ export function runMcpHttpServer(
           return;
         }
       }
-      if (!res.destroyed) await handleMcpRequest(req, res, { ...options, execute });
+      if (!res.destroyed) await handleMcpRequest(req, res, { ...options, icons, execute });
     }
     dispatch().catch((error: unknown) => {
       if (!res.headersSent) {

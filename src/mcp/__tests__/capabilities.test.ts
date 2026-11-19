@@ -42,8 +42,31 @@ describe('capability modes', () => {
     const tools = (await client.listTools()).tools.map((tool) => tool.name);
     expect(tools.length).toBe(27);
     expect(tools).toEqual(expect.arrayContaining(excluded));
-    expect(client.getServerVersion()).toEqual({ name: 'omnifocus', version: packageJson.version });
+    expect(client.getServerVersion()).toMatchObject({
+      name: 'omnifocus',
+      version: packageJson.version,
+    });
   });
+
+  for (const mode of ['full', 'read-only'] as const) {
+    it(`advertises self-contained default PNG icons in ${mode} mode`, async () => {
+      const client = await connect(mode);
+      clients.push(client);
+      const icons = client.getServerVersion()?.icons;
+      expect(icons).toHaveLength(2);
+      for (const [index, size] of [128, 64].entries()) {
+        const icon = icons![index];
+        expect(icon.mimeType).toBe('image/png');
+        expect(icon.sizes).toEqual([`${size}x${size}`]);
+        expect(icon.src).toMatch(/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/);
+        const png = Buffer.from(icon.src.split(',')[1], 'base64');
+        expect(png.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+        expect(png.toString('ascii', 12, 16)).toBe('IHDR');
+        expect(png.readUInt32BE(16)).toBe(size);
+        expect(png.readUInt32BE(20)).toBe(size);
+      }
+    });
+  }
 
   for (const status of [-1744, -1743]) {
     it(`returns typed consent errors through MCP for ${status}`, async () => {
