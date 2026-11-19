@@ -4,7 +4,7 @@ import { request, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { runMcpHttpServer } from '../http.js';
 
-const issuer = 'https://dolanfamily.cloudflareaccess.com';
+const issuer = 'https://example.cloudflareaccess.com';
 const audience = 'test-application-audience';
 const keys = await generateKeyPair('RS256');
 const forgedKeys = await generateKeyPair('RS256');
@@ -61,7 +61,7 @@ describe('Access authentication at the HTTP origin', () => {
         keys: [{ ...(await exportJWK(keys.publicKey)), kid: 'test-key', alg: 'RS256' }],
       })
     );
-    server = await runMcpHttpServer(0, ['omnifocus.stephendolan.com'], {
+    server = await runMcpHttpServer(0, ['omnifocus.example.com'], {
       access: { teamDomain: issuer, audience },
     });
     port = (server.address() as AddressInfo).port;
@@ -74,7 +74,7 @@ describe('Access authentication at the HTTP origin', () => {
 
   it('accepts correctly signed assertions and fetches keys only from the configured issuer', async () => {
     const assertion = await token();
-    for (const host of ['localhost', '127.0.0.1', 'omnifocus.stephendolan.com']) {
+    for (const host of ['localhost', '127.0.0.1', 'omnifocus.example.com']) {
       const result = await call(port, host, assertion);
       expect(result.status).toBe(200);
       expect(result.body.result.tools.length).toBe(27);
@@ -92,7 +92,7 @@ describe('Access authentication at the HTTP origin', () => {
       await token({ exp: undefined }),
       await token({ nbf: Math.floor(Date.now() / 1000) + 3600 }),
     ];
-    for (const host of ['localhost', '127.0.0.1', 'omnifocus.stephendolan.com']) {
+    for (const host of ['localhost', '127.0.0.1', 'omnifocus.example.com']) {
       for (const assertion of assertions) {
         const result = await call(port, host, assertion);
         expect(result.status).toBe(401);

@@ -52,17 +52,28 @@ HTTP request capacity and OmniFocus execution capacity are separate. Disconnects
 free HTTP capacity; an OmniFocus execution retains its slot until its promise
 settles. The limit applies across all requests to that listener.
 
-## Mac Mini public deployment
+## Mac Mini public deployment example
 
-The private fallback is independent: `com.stephendolan.omnifocus-mcp` listens on
-127.0.0.1:3939. Preserve its plist and absolute Node binary path during upgrades. Preserve
-Tailscale Serve 443 → 127.0.0.1:38886 and 8443 → 127.0.0.1:3939.
+The files in [deployment/](deployment/) are templates. Replace the example
+hostname `omnifocus.example.com`, team domain placeholder
+`example.cloudflareaccess.com`, and `YOUR_ACCESS_AUDIENCE` with your Cloudflare
+Access configuration. Replace `/Users/you` with your home directory and choose
+your own `com.example.` labels and bundle identifier, keeping them consistent
+across the plists. Plist paths must be absolute; launchd does not expand `$HOME`
+or `~`. The paths and pinned versions illustrate one installation layout.
 
-The public service is `com.stephendolan.omnifocus-mcp-public`, bound only to
-127.0.0.1:3940, allowing Host `omnifocus.stephendolan.com`. Its configured issuer is
-`https://dolanfamily.cloudflareaccess.com`. The application audience is configuration
-supplied by the Access application owner and is recorded in the public LaunchAgent
-template. Changing the audience does not require rebuilding the package.
+The private fallback is independent: `com.example.omnifocus-mcp` listens on
+127.0.0.1:3939. Its example Tailscale hostname is
+`mac-mini.example-tailnet.ts.net`, with Serve 8443 → 127.0.0.1:3939. Use your
+own machine's hostname. Preserve the fallback's plist, absolute Node binary path,
+and Serve configuration during upgrades.
+
+The public service is `com.example.omnifocus-mcp-public`, bound only to
+127.0.0.1:3940, allowing Host `omnifocus.example.com`. Its configured issuer is
+`https://example.cloudflareaccess.com`, using the team domain placeholder above.
+The Access application owner supplies the application audience. Replace
+`YOUR_ACCESS_AUDIENCE` in both public LaunchAgent templates with that value.
+Changing the audience does not require rebuilding the package.
 
 Install a pinned npm artifact in:
 
@@ -82,13 +93,14 @@ For an upgrade with fixed LaunchAgent paths, install the pinned npm artifact int
 the public agent's existing prefix (which can retain an older version in its
 directory name). Update the fallback's global package from that same npm artifact,
 preserving unrelated global packages. Do not change either plist's Node or CLI
-paths. Both agents must use
-`/Users/stephen/.local/share/mise/installs/node/26.13.0/bin/node`.
+paths. Both agents must retain their approved absolute Node binary path, for
+example `$HOME/.local/share/mise/installs/node/26.13.0/bin/node` expanded to an
+absolute path.
 Restart both listeners after updating their artifacts:
 
 ```sh
-launchctl kickstart -k gui/$(id -u)/com.stephendolan.omnifocus-mcp-public
-launchctl kickstart -k gui/$(id -u)/com.stephendolan.omnifocus-mcp
+launchctl kickstart -k gui/$(id -u)/com.example.omnifocus-mcp-public
+launchctl kickstart -k gui/$(id -u)/com.example.omnifocus-mcp
 ```
 
 Verify changed PIDs and launch times, then initialize each localhost endpoint and
@@ -99,7 +111,7 @@ The public endpoint requires a real Access assertion even on localhost.
 fields plus `alreadyExisted`. They match exact top-level names, including dropped
 folders, and reuse a match without changing it. Nested names do not match.
 
-Prepare `com.stephendolan.omnifocus-cloudflared` from the separate template,
+Prepare `com.example.omnifocus-cloudflared` from the separate template,
 substituting `__TOKEN_DIRECTORY__` with `~/.cloudflared` expanded to an absolute
 path. Keep that directory mode 700 and the agent unloaded until the securely
 transferred token is present at `~/.cloudflared/omnifocus-tunnel.token`, mode 600.
@@ -107,7 +119,7 @@ The template also waits for the token path before starting if launchd loads it
 at login. Never put the token in a plist, command argument, repository, or chat.
 Do not create a dummy token. The remotely managed tunnel routes the host to
 `http://127.0.0.1:3940`, with a final 404 ingress. The external endpoint is
-`https://omnifocus.stephendolan.com/mcp`.
+`https://omnifocus.example.com/mcp`.
 
 For encrypted token handoff, generate a one-time RSA-4096 private key at
 `~/.cloudflared/transfer-key.pem`, mode 600. Share only its public key. Use
@@ -131,12 +143,10 @@ interact with a locked session, reset grants, or relaunch OmniFocus unattended.
 
 macOS attributes child Apple Events to a responsible ancestor. An absolute Node
 path does not guarantee attribution to that Node binary: a BB thread can inherit
-the BB daemon's unapproved TCC identity. Two November 2026 consent dialogs from
-unapproved contexts wedged all OmniFocus script access until OmniFocus was
-relaunched. Both running listeners retain the approved path
-`/Users/stephen/.local/share/mise/installs/node/26.13.0/bin/node` until attended
-launcher cutover. Do not run mise commands during staging or deployment: they
-can prune installed runtimes.
+the BB daemon's unapproved TCC identity. Consent dialogs from unapproved contexts
+can block OmniFocus script access. Retain each listener's approved runtime path
+until attended launcher cutover. Do not run mise commands during staging or
+deployment: they can prune installed runtimes.
 
 The only sanctioned direct check in an agent context is `of doctor` without
 `--request-consent`. It calls `AEDeterminePermissionToAutomateTarget` for
@@ -167,22 +177,23 @@ reads through Tailscale 8443 and compare the original plist and Serve configurat
 with the saved inventory. Valid local test signatures prove verifier behavior;
 they do not prove the real Access application or tunnel configuration.
 
-## Staged launcher and runtime (no cutover)
+## Launcher and runtime templates
 
-The inert app at `~/Applications/OmniFocus MCP.app` is built from
+An app at `~/Applications/OmniFocus MCP.app` can be built from
 [launcher/](deployment/launcher/). Its bundle identifier is
-`com.stephendolan.omnifocus-mcp`; it is background-only, declares an Automation
+`com.example.omnifocus-mcp`; it is background-only, declares an Automation
 usage description, and carries `com.apple.security.automation.apple-events`.
 Build to a fresh absolute output path with:
 
 ```sh
-docs/deployment/launcher/build.sh "/absolute/output/OmniFocus MCP.app"
+SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+  docs/deployment/launcher/build.sh "/absolute/output/OmniFocus MCP.app"
 ```
 
-The build uses hardened runtime, an Apple timestamp, and only Developer ID
-Application: Stephen Dolan (J4VQ7X4A9Q), certificate
-`1725FF6181DF68C174D18DEA59BB585DAB737550`. Verify with `codesign -d -r-` and
-`codesign --verify --strict`. The launcher uses `posix_spawn`, forwards SIGTERM,
+Set `SIGNING_IDENTITY` to your Developer ID Application identity or certificate
+fingerprint; the example above is a placeholder. The build requires this input
+and uses hardened runtime and an Apple timestamp. Verify with `codesign -d -r-`
+and `codesign --verify --strict`. The launcher uses `posix_spawn`, forwards SIGTERM,
 SIGINT, and SIGHUP, and exits with the child's exit code (128 + signal for a
 signal termination). Node and JavaScript remain outside the bundle. A stable
 signed bundle provides the intended TCC client identity across runtime upgrades;
@@ -195,19 +206,20 @@ The official `node-v26.13.0-darwin-arm64.tar.gz` from
 is `d38bd5e5a2ddce6bbb5ce45e46e208337da4d51fffe611e567fd32073d6439f6`.
 Verify the unpacked `bin/node` with `codesign --verify`; do not re-sign Node.
 
-Future listener definitions are staged at
-[com.stephendolan.omnifocus-mcp.staged.plist](deployment/com.stephendolan.omnifocus-mcp.staged.plist)
+Example listener definitions are provided at
+[com.example.omnifocus-mcp.staged.plist](deployment/com.example.omnifocus-mcp.staged.plist)
 and
-[com.stephendolan.omnifocus-mcp-public.staged.plist](deployment/com.stephendolan.omnifocus-mcp-public.staged.plist).
+[com.example.omnifocus-mcp-public.staged.plist](deployment/com.example.omnifocus-mcp-public.staged.plist).
 Their arguments prepend the launcher and staged Node to the existing CLI entry
 and listener arguments. They add `AssociatedBundleIdentifiers` for the launcher.
-These are machine-specific staged files, **not installed LaunchAgents**. Do not
-bootstrap them, run the app, or point either live listener at the staged runtime
-until Stephen is present for cutover and any initial consent.
+These are templates, **not installed LaunchAgents**. Do not bootstrap them, run
+the app, or point either live listener at the staged runtime until the user is
+present for cutover and any initial consent.
 
-For the 2.10.0 deployment, preserve both live plists byte for byte and update
-their installed CLI artifacts. Rebuild the repository `dist`, then kickstart each
-listener once using the commands above. Verify only HTTP initialization on 3939
-(version 2.10.0) and unauthenticated rejection on 3940 (401), and confirm both
-live plists still pin the mise Node 26.13.0 path with `plutil`. Do not stop or
-change the tunnel. Transport verification does not prove live OmniFocus access.
+For an artifact-only upgrade, preserve both installed plists byte for byte and
+update their installed CLI artifacts. Rebuild the repository `dist`, then
+kickstart each listener once using the commands above. Verify HTTP initialization on 3939
+(the expected installed version) and unauthenticated rejection on 3940 (401), and
+confirm both plists still pin their approved runtime path with `plutil`. Do not
+stop or change the tunnel. Transport verification does not prove live OmniFocus
+access.

@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>com.stephendolan.omnifocus-mcp</string>
+    <string>com.example.omnifocus-mcp</string>
     <key>CFBundleExecutable</key>
     <string>omnifocus-mcp-launcher</string>
     <key>CFBundleName</key>
