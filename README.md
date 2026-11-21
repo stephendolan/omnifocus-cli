@@ -105,7 +105,44 @@ of inbox add "Task name"            # Add task to inbox
 ```bash
 of perspective list                 # List all perspectives
 of perspective view "Forecast"      # View tasks in perspective
+of perspective get-rules "Example"  # Read a custom perspective's rule archive
+of perspective update-rules "Example" --file definition.json # Replace its rule archive
 ```
+
+`get_perspective_rules` accepts `{"idOrName":"Example"}`. Its result is
+`{"id":"PERSPECTIVE_ID","name":"Example","definition":{...}}`.
+`update_perspective_rules` accepts `{"idOrName":"PERSPECTIVE_ID","definition":{...}}`
+and returns the same shape. Use the returned stable identifier when names are
+ambiguous. Built-in perspectives return an error.
+
+A complete definition is structured JSON, for example:
+
+```json
+{
+  "archivedFilterRules": [
+    {"actionAvailability":"available"},
+    {"aggregateType":"none","aggregateRules":[{"actionIsProject":true}]}
+  ],
+  "archivedTopLevelFilterAggregation":"all"
+}
+```
+
+Top-level aggregation accepts `all`, `any`, `none`, or `null`; nested groups
+require `aggregateType` (`all`, `any`, `none`) and an `aggregateRules` array.
+Rule objects must be nonempty. Unknown rule fields survive round trips; the JSON
+key `__proto__` is rejected because the validator would discard it. Updates
+replace the entire archive, validate structure before contacting OmniFocus, and
+restore the original archive on setter errors or readback mismatch. Recovery
+failures are reported explicitly. An empty rule array clears all filters.
+
+To write a read result back, extract `.definition` into `definition.json` with
+`jq '.definition' perspective.json`; `--file -` accepts a definition on stdin.
+Reading is available in read-only mode; updating requires full mode. Both operate
+without switching windows. The Omni Automation archive contains filters and
+aggregation; grouping, sorting, and layout are separate export-plist settings
+with no setters in this API and are preserved. Creating a perspective shell
+requires the app. See [perspective rule operations](docs/mcp-operations.md#perspective-rule-archives)
+for fidelity checks and failure boundaries.
 
 ### Folders
 
@@ -183,7 +220,7 @@ tailscale serve --bg --https=8443 http://127.0.0.1:3939
 claude mcp add --transport http omnifocus https://<machine>.<tailnet>.ts.net:8443/mcp
 ```
 
-Full mode is the default (27 tools). Use `--mode read-only` for the 16-tool read-only allowlist; direct calls to excluded tools are rejected, including `get_perspective_tasks` because it changes the front window.
+Full mode is the default (29 tools). Use `--mode read-only` for the 17-tool read-only allowlist; direct calls to excluded tools are rejected, including `get_perspective_tasks` because it changes the front window.
 
 For an authenticated public reverse proxy, require Cloudflare Access JWT validation at the origin:
 

@@ -25,6 +25,7 @@ const excluded = [
   'delete_project',
   'create_tag',
   'update_tag',
+  'update_perspective_rules',
   'delete_tag',
   'create_folder',
   'get_perspective_tasks',
@@ -40,7 +41,7 @@ describe('capability modes', () => {
     const client = await connect();
     clients.push(client);
     const tools = (await client.listTools()).tools.map((tool) => tool.name);
-    expect(tools.length).toBe(27);
+    expect(tools.length).toBe(29);
     expect(tools).toEqual(expect.arrayContaining(excluded));
     expect(client.getServerVersion()).toMatchObject({
       name: 'omnifocus',
@@ -112,6 +113,7 @@ describe('capability modes', () => {
     expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual([
       'get_folder',
       'get_inbox_count',
+      'get_perspective_rules',
       'get_project',
       'get_project_stats',
       'get_tag',
@@ -136,7 +138,13 @@ describe('capability modes', () => {
         type: 'text',
         text: JSON.stringify(
           {
-            tools: [{ name: 'list_perspectives', description: 'List all available perspectives' }],
+            tools: [
+              { name: 'list_perspectives', description: 'List all available perspectives' },
+              {
+                name: 'get_perspective_rules',
+                description: 'Read a custom perspective rule archive as structured JSON',
+              },
+            ],
           },
           null,
           2

@@ -11,6 +11,7 @@ const READ_ONLY_TOOLS = new Set([
   'get_project',
   'get_project_stats',
   'list_perspectives',
+  'get_perspective_rules',
   'list_tags',
   'get_tag',
   'get_tag_stats',
