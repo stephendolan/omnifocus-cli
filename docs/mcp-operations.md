@@ -94,7 +94,8 @@ The private fallback is independent: `com.example.omnifocus-mcp` listens on
 127.0.0.1:3939. Its example Tailscale hostname is
 `mac-mini.example-tailnet.ts.net`, with Serve 8443 → 127.0.0.1:3939. Use your
 own machine's hostname. Preserve the fallback's plist, absolute Node binary path,
-and Serve configuration during upgrades.
+signed launcher identity, and Serve configuration during upgrades. Both listeners
+use the same launcher bundle and the pinned official Node v26.13.0 runtime.
 
 The public service is `com.example.omnifocus-mcp-public`, bound only to
 127.0.0.1:3940, allowing Host `omnifocus.example.com`. Its configured issuer is
@@ -110,21 +111,20 @@ Install a pinned npm artifact in:
 ```
 
 Use `npm install --prefix <release-directory> --ignore-scripts --save-exact
-@stephendolan/omnifocus-cli@2.11.0`, then run its `dist/cli.js` with an absolute,
-versioned Node path. The existing global installation remains the fallback's
-artifact. Templates are in [deployment/](deployment/). Substitute `__NODE_PATH__`
-and `__INSTALL_ROOT__`, render the public plist into `~/Library/LaunchAgents/`,
-and use `launchctl bootstrap gui/$(id -u) <plist>`. Reload only this public service
-when changing its audience or mode. Keep the installation directory mode 700.
+@stephendolan/omnifocus-cli@2.11.0`. The signed launcher starts that artifact's
+`dist/cli.js` under an absolute, versioned Node path. The existing global
+installation remains the fallback's CLI artifact. Use the launcher templates
+linked below to prepare the agents in `~/Library/LaunchAgents/`. Keep the public
+installation directory mode 700. Reload only the public service when changing
+its audience or mode.
 
 For an upgrade with fixed LaunchAgent paths, install the pinned npm artifact into
 the public agent's existing prefix (which can retain an older version in its
 directory name). Update the fallback's global package from that same npm artifact,
-preserving unrelated global packages. Do not change either plist's Node or CLI
-paths. Both agents must retain their approved absolute Node binary path, for
-example `$HOME/.local/share/mise/installs/node/26.13.0/bin/node` expanded to an
-absolute path.
-Restart both listeners after updating their artifacts:
+preserving unrelated global packages. Keep both installed plists byte for byte,
+including their launcher, Node, CLI, and icon paths. The external Node runtime
+does not own the listeners' Automation grant; the signed launcher bundle does.
+Restart each listener once after updating its artifact:
 
 ```sh
 launchctl kickstart -k gui/$(id -u)/com.example.omnifocus-mcp-public
@@ -221,7 +221,7 @@ values and acceptance evidence outside this operations document.
 
 An MCP initialize or tools/list response proves transport availability. A tool
 response with HTTP 200 can still contain `result.isError: true`. Health requires
-successful `list_perspectives` and a task read, with valid parsed tool content.
+a successful real read, such as `get_project_stats`, with valid parsed tool content.
 `get_inbox_count` traverses and serializes the inbox; it is not a cheap liveness
 probe. Avoid `get_perspective_tasks` for health because it switches the user's view.
 
@@ -235,24 +235,28 @@ macOS attributes child Apple Events to a responsible ancestor. An absolute Node
 path does not guarantee attribution to that Node binary: a BB thread can inherit
 the BB daemon's unapproved TCC identity. Consent dialogs from unapproved contexts
 can block OmniFocus script access. Retain each listener's approved runtime path
-until attended launcher cutover. Do not run mise commands during staging or
-deployment: they can prune installed runtimes.
+when staging a launcher cutover, then use the signed bundle as described below.
+Do not run mise commands during staging or deployment: they can prune installed
+runtimes.
 
 The only sanctioned direct check in an agent context is `of doctor` without
 `--request-consent`. It calls `AEDeterminePermissionToAutomateTarget` for
 `com.omnigroup.OmniFocus4`, with wildcard event class/ID and
 `askUserIfNeeded=false`; it sends no Apple event and cannot prompt. The same
 preflight guards every operation before `evaluateJavascript`. Status -1744
-returns `automation_consent_required`; -1743 returns `automation_denied`. CLI
-errors exit 1 and include `statusCode: 403`, `osStatus`, and `execPath`; MCP
-returns the typed JSON with `isError: true`. Other nonzero preflight statuses
-also stop the operation (for example, OmniFocus not running). `execPath` names
-the CLI runtime, not necessarily the ancestor TCC considers responsible.
+returns `automation_consent_required`; -1743 returns `automation_denied`. Both
+have `statusCode: 403`. Other nonzero statuses return
+`automation_preflight_failed` with `statusCode: 503`. CLI errors exit 1 and
+include `osStatus` and `execPath`; MCP returns the typed JSON with
+`isError: true`. An unapproved BB shell can return -600 even while reads through
+the approved listeners succeed. Do not infer that OmniFocus is stopped from that
+status alone. `execPath` names the CLI runtime, not necessarily the ancestor TCC
+considers responsible.
 
 `of doctor --request-consent` is the only path that sets `askUserIfNeeded=true`.
-It is reserved for attended setup in the intended client context; never run it
-from an agent context. Tests use bridge and executable mocks, never live Apple
-events or real `osascript`.
+It is reserved for attended setup under the intended signed launcher identity;
+never execute it directly from a BB shell. Tests use bridge and executable
+mocks, never live Apple events or real `osascript`.
 
 A successful signal command does not prove a service restarted. Verify its PID
 and launch time before calling a check post-restart. TCC enables
@@ -267,12 +271,13 @@ reads through Tailscale 8443 and compare the original plist and Serve configurat
 with the saved inventory. Valid local test signatures prove verifier behavior;
 they do not prove the real Access application or tunnel configuration.
 
-## Launcher and runtime templates
+## Signed launcher and external runtime
 
-An app at `~/Applications/OmniFocus MCP.app` can be built from
-[launcher/](deployment/launcher/). Its bundle identifier is
-`com.example.omnifocus-mcp`; it is background-only, declares an Automation
-usage description, and carries `com.apple.security.automation.apple-events`.
+Both listeners start the same signed background app, built from
+[launcher/](deployment/launcher/). The templates use bundle identifier
+`com.example.omnifocus-mcp`. The app declares an Automation usage description
+and carries `com.apple.security.automation.apple-events`. Its bundle version,
+the external Node version, and the CLI package version are independent.
 Build to a fresh absolute output path with:
 
 ```sh
@@ -285,9 +290,19 @@ fingerprint; the example above is a placeholder. The build requires this input
 and uses hardened runtime and an Apple timestamp. Verify with `codesign -d -r-`
 and `codesign --verify --strict`. The launcher uses `posix_spawn`, forwards SIGTERM,
 SIGINT, and SIGHUP, and exits with the child's exit code (128 + signal for a
-signal termination). Node and JavaScript remain outside the bundle. A stable
-signed bundle provides the intended TCC client identity across runtime upgrades;
-actual attribution and initial consent must be verified during attended cutover.
+signal termination). Node and JavaScript remain outside the bundle. Keep the
+bundle identifier and signing identity stable across runtime upgrades. The
+verified launch chain is:
+
+```text
+GUI launchd → signed launcher app → external Node → installed CLI → osascript
+```
+
+Both listeners share the bundle's Automation grant. A second listener or a Node
+version change does not need another consent request while that grant and bundle
+identity remain intact. Verify TCC responsibility in logs rather than assuming
+that a signed executable establishes it: a direct invocation from a BB shell can
+still inherit BB's ancestry.
 
 The official `node-v26.13.0-darwin-arm64.tar.gz` from
 [nodejs.org](https://nodejs.org/dist/v26.13.0/) is checked against that release's
@@ -302,14 +317,77 @@ and
 [com.example.omnifocus-mcp-public.staged.plist](deployment/com.example.omnifocus-mcp-public.staged.plist).
 Their arguments prepend the launcher and staged Node to the existing CLI entry
 and listener arguments. They add `AssociatedBundleIdentifiers` for the launcher.
-These are templates, **not installed LaunchAgents**. Do not bootstrap them, run
-the app, or point either live listener at the staged runtime until the user is
-present for cutover and any initial consent.
+These are parameterized templates, **not copies of installed LaunchAgents**.
+Derive replacements from the current live plists and use the templates for
+structure only. Replace the original Node entry with the launcher followed by
+the external Node entry, leaving the CLI path and every subsequent argument
+unchanged. If a live plist has a separate `Program` key, update it consistently.
+Preserve the entire environment, including `OMNIFOCUS_MCP_ICON_PNG` on both
+listeners, and associate both jobs with the same actual bundle identifier.
+Compare the replacements locally, redact Access values in any report, and run
+`plutil -lint` before installation. Use bootout/bootstrap to load changed plists;
+kickstart alone retains launchd's cached configuration. Do not change the tunnel
+or Tailscale Serve configuration.
 
-For an artifact-only upgrade, preserve both installed plists byte for byte and
-update their installed CLI artifacts. Rebuild the repository `dist`, then
-kickstart each listener once using the commands above. Verify HTTP initialization on 3939
-(the expected installed version) and unauthenticated rejection on 3940 (401), and
-confirm both plists still pin their approved runtime path with `plutil`. Do not
-stop or change the tunnel. Transport verification does not prove live OmniFocus
-access.
+### One attended consent grant
+
+Before the initial cutover, the user must unlock the Mac and dismiss any stale
+consent dialogs. A pending dialog can hold TCC's prompt slot. Switch the public
+listener first and confirm unauthenticated initialize returns 401 before making
+an OmniFocus tool call.
+
+For the single attended consent request, prepare a one-shot LaunchAgent in the
+GUI domain with a unique label, `RunAtLoad=true`, `KeepAlive=false`, the same
+`AssociatedBundleIdentifiers`, and absolute `ProgramArguments`:
+
+```text
+[<LAUNCHER_EXECUTABLE>, <NODE_BINARY>, <CLI_DIST>, doctor, --request-consent]
+```
+
+Start it through GUI launchd without a shell in the child chain. The user clicks
+Allow in person. Never script the click. The installed doctor has a 30-second
+inner timeout; a longer outer wait cannot extend it. Stop on failure or timeout
+and do not repeat the prompting command automatically.
+
+Require doctor to return `granted` with OSStatus 0 and the one-shot job to exit 0.
+Correlate `log show` entries from subsystem `com.apple.TCC` with the request time
+and process IDs. `AttributionChain` must name the actual launcher bundle as
+**responsible**, and the grant must target OmniFocus. Mere presence of the
+bundle somewhere in the chain is insufficient. Then verify a real public read
+through an authenticated client. Keep its credentials on that client's host;
+they need not be copied to the Mini. Retain the exited job's output as evidence.
+
+### Runtime acceptance and listener verification
+
+Download a different official Node version from nodejs.org, compare its tarball
+with that release's `SHASUMS256.txt`, and verify the extracted Node signature
+without re-signing it. Stage it alongside the pinned runtime. Change only the
+public plist's Node argument, bootout/bootstrap, and verify a real
+`get_project_stats` read with no prompt. Restore the pinned path, restart once,
+and verify another real read. Acceptance covers official Node v26.13.0 and
+v26.12.0 while retaining the same launcher bundle.
+
+Switch the fallback to the same launcher and pinned runtime, initialize on
+3939, compare decoded icon bytes, and verify a real read through that listener.
+Do not request consent again. If a prompt appears, stop. Public initialization
+without credentials must still return 401; authenticated initialization supplies
+the CLI version and icons. Check the live Node child executable and its
+`--version` as well as the new listener startup log. The stock startup log prints
+the endpoint, not the Node version. Verify changed PIDs and launch times after
+each planned restart.
+
+### Recovery after a timeout
+
+Stop further reads and restarts, including a planned runtime restoration. Leave
+OmniFocus, dialogs, and TCC state untouched. Preserve the client deadline,
+startup log, process IDs, and read-only TCC attribution evidence. HTTP 200 alone
+is not success; parse the tool result and reject `isError: true`.
+
+A first read after restart can exceed the client's deadline, but that does not
+establish the cause. An HTTP disconnect also does not prove the server-side
+operation finished. After a fresh user steer authorizes recovery, make only the
+bounded retry they requested. A successful real read verifies recovery; another
+timeout stops the sequence again. Do not add a consent request or restart as an
+automatic recovery step. Use `of doctor` without `--request-consent` for a
+preflight-only check from an agent context; it is not a substitute for a real
+listener read.
