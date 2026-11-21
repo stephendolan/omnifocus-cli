@@ -7,6 +7,7 @@ import { errorResponse } from '../lib/errors.js';
 import packageJson from '../../package.json' with { type: 'json' };
 import { canUseTool, type CapabilityMode } from './capabilities.js';
 import { loadMcpIcons } from './icons.js';
+import { perspectiveRulesSchema } from '../lib/perspective-rules.js';
 import type { Icon } from '@modelcontextprotocol/sdk/types.js';
 
 const toolRegistry = [
@@ -26,6 +27,14 @@ const toolRegistry = [
   { name: 'delete_project', description: 'Delete a project' },
   { name: 'get_project_stats', description: 'Get project statistics' },
   { name: 'list_perspectives', description: 'List all available perspectives' },
+  {
+    name: 'get_perspective_rules',
+    description: 'Read a custom perspective rule archive as structured JSON',
+  },
+  {
+    name: 'update_perspective_rules',
+    description: 'Replace a custom perspective rule archive with a complete JSON definition',
+  },
   { name: 'get_perspective_tasks', description: 'Get tasks from a specific perspective' },
   { name: 'list_tags', description: 'List all tags with optional filtering and sorting' },
   { name: 'get_tag', description: 'Get a specific tag by ID or name' },
@@ -257,6 +266,30 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
   if (canUseTool('list_perspectives', mode)) {
     server.tool('list_perspectives', 'List all available perspectives', {}, async () =>
       respond(() => of.listPerspectives())
+    );
+  }
+
+  if (canUseTool('get_perspective_rules', mode)) {
+    server.tool(
+      'get_perspective_rules',
+      'Read a custom perspective rule archive as structured JSON',
+      { idOrName: z.string().describe('Custom perspective identifier or exact name') },
+      async ({ idOrName }) => respond(() => of.getPerspectiveRules(idOrName))
+    );
+  }
+
+  if (canUseTool('update_perspective_rules', mode)) {
+    server.tool(
+      'update_perspective_rules',
+      'Replace a custom perspective rule archive with a complete JSON definition',
+      {
+        idOrName: z.string().describe('Custom perspective identifier or exact name'),
+        definition: perspectiveRulesSchema.describe(
+          'Complete rule archive returned by get_perspective_rules'
+        ),
+      },
+      async ({ idOrName, definition }) =>
+        respond(() => of.updatePerspectiveRules(idOrName, definition))
     );
   }
 

@@ -1,6 +1,12 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { AutomationPermissionError, consentPreflight, OMNIFOCUS_BUNDLE_ID } from './consent.js';
+import {
+  parsePerspectiveRules,
+  PERSPECTIVE_RULES_HELPERS,
+  type PerspectiveRulesDefinition,
+  type PerspectiveRulesResult,
+} from './perspective-rules.js';
 import type {
   Task,
   Project,
@@ -685,6 +691,76 @@ export class OmniFocus {
       })();
     `;
 
+    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
+    return JSON.parse(output);
+  }
+
+  async getPerspectiveRules(idOrName: string): Promise<PerspectiveRulesResult> {
+    const omniScript = `
+      ${PERSPECTIVE_RULES_HELPERS}
+      (() => {
+        const perspective = findCustomPerspective(${JSON.stringify(idOrName)});
+        return JSON.stringify({
+          id: perspective.identifier,
+          name: perspective.name,
+          definition: readPerspectiveRules(perspective)
+        });
+      })();
+    `;
+    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
+    return JSON.parse(output);
+  }
+
+  async updatePerspectiveRules(
+    idOrName: string,
+    input: PerspectiveRulesDefinition
+  ): Promise<PerspectiveRulesResult> {
+    const definition = parsePerspectiveRules(input);
+    const omniScript = `
+      ${PERSPECTIVE_RULES_HELPERS}
+      (() => {
+        const perspective = findCustomPerspective(${JSON.stringify(idOrName)});
+        const original = readPerspectiveRules(perspective);
+        const definition = JSON.parse(${JSON.stringify(JSON.stringify(definition))});
+        try {
+          perspective.archivedFilterRules = definition.archivedFilterRules;
+          perspective.archivedTopLevelFilterAggregation = definition.archivedTopLevelFilterAggregation;
+          const actual = readPerspectiveRules(perspective);
+          if (canonicalRules(actual) !== canonicalRules(definition)) {
+            throw new Error('OmniFocus did not retain the requested perspective rules');
+          }
+          return JSON.stringify({ id: perspective.identifier, name: perspective.name, definition: actual });
+        } catch (error) {
+          const failures = [];
+          for (const key of ['archivedFilterRules', 'archivedTopLevelFilterAggregation']) {
+            try {
+              let current;
+              try {
+                current = canonicalRules(perspective[key]);
+              } catch {
+                current = undefined;
+              }
+              if (current !== canonicalRules(original[key])) {
+                perspective[key] = original[key];
+              }
+            } catch (restoreError) {
+              failures.push(key + ': ' + restoreError.message);
+            }
+          }
+          try {
+            if (canonicalRules(readPerspectiveRules(perspective)) !== canonicalRules(original)) {
+              failures.push('restored definition differs from original');
+            }
+          } catch (verifyError) {
+            failures.push(verifyError.message);
+          }
+          if (failures.length) {
+            throw new Error(error.message + '; perspective rules rollback failed: ' + failures.join('; '));
+          }
+          throw error;
+        }
+      })();
+    `;
     const output = await this.executeJXA(this.wrapOmniScript(omniScript));
     return JSON.parse(output);
   }

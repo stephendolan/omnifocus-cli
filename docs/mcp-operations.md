@@ -54,8 +54,8 @@ public listener must continue rejecting requests without credentials.
 
 ## Capability and authentication boundaries
 
-Full mode is the default (27 tools). `--mode read-only` registers 16 tools and
-excludes all ten create/update/delete tools and `get_perspective_tasks`, which
+Full mode is the default (29 tools). `--mode read-only` registers 17 tools and
+excludes all eleven create/update/delete tools and `get_perspective_tasks`, which
 changes the user's front window. The same allowlist filters `search_tools`.
 Excluded tools are unregistered and direct calls fail. A listener owns its mode;
 caller claims do not select a mode. Issue a credential for a separate read-only
@@ -106,11 +106,11 @@ Changing the audience does not require rebuilding the package.
 Install a pinned npm artifact in:
 
 ```text
-~/Library/Application Support/omnifocus-mcp-public/releases/2.10.2/
+~/Library/Application Support/omnifocus-mcp-public/releases/2.11.0/
 ```
 
 Use `npm install --prefix <release-directory> --ignore-scripts --save-exact
-@stephendolan/omnifocus-cli@2.10.2`, then run its `dist/cli.js` with an absolute,
+@stephendolan/omnifocus-cli@2.11.0`, then run its `dist/cli.js` with an absolute,
 versioned Node path. The existing global installation remains the fallback's
 artifact. Templates are in [deployment/](deployment/). Substitute `__NODE_PATH__`
 and `__INSTALL_ROOT__`, render the public plist into `~/Library/LaunchAgents/`,
@@ -132,7 +132,7 @@ launchctl kickstart -k gui/$(id -u)/com.example.omnifocus-mcp
 ```
 
 Verify changed PIDs and launch times, then initialize each localhost endpoint and
-check version `2.10.2`, `serverInfo.icons`, and its tool list. Full mode has 27 tools; read-only has 16.
+check version `2.11.0`, `serverInfo.icons`, and its tool list. Full mode has 29 tools; read-only has 17.
 The public endpoint requires a real Access assertion even on localhost.
 
 `folder create <name>` and the full-mode `create_folder` tool return the folder
@@ -154,6 +154,68 @@ For encrypted token handoff, generate a one-time RSA-4096 private key at
 RSA-OAEP with SHA-256 and MGF1-SHA-256, transfer the ciphertext as base64, and
 decrypt directly into the mode-600 token file. Verify cloudflared can read the
 token before removing the transfer private key.
+
+## Perspective rule archives
+
+`get_perspective_rules {"idOrName":"Example"}` reads an existing custom
+perspective by exact name or stable Omni Automation identifier. Duplicate names
+require an identifier. Its JSON tool content is
+`{"id":"PERSPECTIVE_ID","name":"Example","definition":{...}}`.
+`update_perspective_rules {"idOrName":"PERSPECTIVE_ID","definition":{...}}`
+replaces the complete archive and returns the same shape with the actual saved
+definition. Reading is available in both modes; updating requires full mode.
+Neither operation needs a window or switches the current perspective.
+
+A definition has exactly these fields:
+
+```json
+{
+  "archivedFilterRules": [
+    {"actionAvailability":"available"},
+    {"aggregateType":"none","aggregateRules":[{"actionIsProject":true}]}
+  ],
+  "archivedTopLevelFilterAggregation": "all"
+}
+```
+
+`archivedFilterRules` is an array of nonempty JSON rule objects, including nested
+`aggregateType` / `aggregateRules` groups. Aggregations are `all`, `any`, or
+`none`; the top-level aggregation also accepts `null` as exposed by OmniFocus.
+Unknown rule fields and JSON values are preserved for archive fidelity. The JSON
+key `__proto__` is rejected because the validator would discard it. Validation
+checks JSON and group structure, not an exhaustive list of OmniFocus predicates.
+An empty array clears all filters. Built-in perspectives have no editable rules
+and fail explicitly. These operations cannot create a perspective.
+
+The [Omni Automation rule archive API](https://omni-automation.com/omnifocus/perspective.html)
+exposes the filter tree and aggregation. Grouping, sorting, hierarchy, and row
+layout belong to the exported perspective plist, not this rule archive. This API
+does not expose setters for those presentation options; rule updates preserve
+them. Do not add export-plist fields to the definition.
+
+Input validation happens before Apple events. Updates snapshot both properties,
+write them in one synchronous Omni Automation evaluation, and compare the complete
+readback with the requested definition, ignoring object key order. Setter errors
+or normalization trigger restoration and verification of the original archive.
+Restoration errors are reported explicitly; the API provides no transaction primitive
+and cannot guarantee recovery if OmniFocus also refuses restoration or the bridge
+terminates during a write. A transport failure alone does not establish write outcome;
+read the definition before retrying.
+
+CLI equivalents:
+
+```sh
+of perspective get-rules Example > perspective.json
+jq '.definition' perspective.json > definition.json
+of perspective update-rules Example --file definition.json
+# Or pipe the definition to --file -
+```
+
+Verify an authorized round trip over the existing fallback HTTP listener: save
+`get_perspective_rules`, call `update_perspective_rules` with its exact `definition`
+and returned `id`, read again, and compare parsed definitions (including every
+unknown field). Check `result.isError` as well as HTTP status. Keep actual database
+values and acceptance evidence outside this operations document.
 
 ## Health and macOS automation
 
