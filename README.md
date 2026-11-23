@@ -184,7 +184,8 @@ The doctor reports `status: "granted"`, `osStatus: 0`, `execPath`, `target`, and
 with `name` (`automation_consent_required` for -1744 or `automation_denied` for
 -1743), `statusCode: 403`, `osStatus`, and `execPath`, and exit with code 1.
 Every OmniFocus operation runs the same non-prompting preflight before sending
-an Apple event. MCP tools return the same typed JSON with `isError: true`.
+an Apple event. MCP tools return the same typed JSON with `isError: true`. See
+[Errors](#errors) for every other failure.
 
 `of doctor --request-consent` explicitly allows a macOS consent prompt. Use it
 only during attended setup in the intended client context. Agent contexts must
@@ -264,6 +265,63 @@ of task list --flagged | jq '.[] | {name, due}'  # Specific fields
   "completionDate": null
 }
 ```
+
+## Errors
+
+A failed command prints a JSON `error` and exits with code 1. A failed MCP tool
+call returns the same JSON as its text content, with `isError: true`.
+
+```json
+{
+  "error": {
+    "name": "omnifocus_error",
+    "detail": "Task not found: Buy milk",
+    "statusCode": 404,
+    "code": "not_found",
+    "changes": "none"
+  }
+}
+```
+
+`changes` says what the failed request did to the database:
+
+| `changes` | Meaning                                                   | What to do                             |
+| --------- | --------------------------------------------------------- | -------------------------------------- |
+| `none`    | Nothing changed.                                          | Correct the request and retry.         |
+| `unknown` | The request may have been applied.                        | Read the object back before retrying.  |
+| `partial` | Part of the request was applied and could not be undone.  | Read the object back and repair it.    |
+
+A failed read always reports `none`.
+
+| `code`                | Status | When                                                                  | `changes` on a write |
+| --------------------- | ------ | --------------------------------------------------------------------- | -------------------- |
+| `not_found`           | 404    | No object matches the reference.                                      | `none`               |
+| `ambiguous`           | 400    | A name matches more than one object. Use an ID.                       | `none`               |
+| `invalid`             | 400    | The object's state does not allow the request.                        | `none`               |
+| `verification_failed` | 500    | OmniFocus did not keep a written value, and the write was undone.     | `none`               |
+| `partial_write`       | 500    | A write failed and could not be undone.                               | `partial`            |
+| `script_error`        | 500    | An unexpected failure inside OmniFocus.                               | `none` or `unknown`  |
+| `bridge_error`        | 502    | `osascript` failed or returned unreadable output.                     | `unknown`            |
+| `timeout`             | 504    | OmniFocus did not answer within 30 seconds.                           | `unknown`            |
+| `expired`             | 504    | OmniFocus reached the request after its caller stopped waiting.       | `none`               |
+| `unresponsive`        | 503    | MCP only: an earlier call timed out, so this one was not sent.        | `none`               |
+| `busy`                | 503    | MCP only: 16 operations are already running.                          | `none`               |
+
+Arguments rejected before OmniFocus is contacted return `name: "cli_error"` with
+status 400 and `changes: "none"`. Arguments that fail an MCP tool's input schema
+are rejected by the MCP layer with a plain-text message and `isError: true`.
+Consent failures are described under [Automation consent](#automation-consent).
+
+A request that times out cannot take effect later. Each script carries the moment
+its caller stops waiting and does nothing if OmniFocus reaches it afterwards, so
+a call left queued behind a blocked OmniFocus is harmless when the queue drains.
+A timed-out write reports `unknown` only because OmniFocus may have started it
+just before that moment.
+
+After a timeout an MCP server stops sending calls to OmniFocus for 30 seconds
+and answers `unresponsive` instead, then lets one call through to find out
+whether OmniFocus answers again. `get_perspective_tasks` waits 60 seconds
+rather than 30.
 
 ## Troubleshooting
 

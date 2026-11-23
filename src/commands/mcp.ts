@@ -1,11 +1,17 @@
 import type { AddressInfo } from 'node:net';
 import { Command, InvalidArgumentError, Option } from 'commander';
+import packageJson from '../../package.json' with { type: 'json' };
 import { withErrorHandling } from '../lib/command-utils.js';
 import { runMcpHttpServer } from '../mcp/http.js';
 import { runMcpServer } from '../mcp/server.js';
 import type { CapabilityMode } from '../mcp/capabilities.js';
 
 const DEFAULT_HTTP_PORT = 3939;
+
+// stdout carries the protocol in stdio mode, so server logs go to stderr.
+function log(message: string): void {
+  console.error(`${new Date().toISOString()} ${message}`);
+}
 
 function parsePort(value: string): number {
   const port = Number(value);
@@ -64,7 +70,7 @@ export function createMcpCommand(): Command {
             );
           }
           if (options.http === undefined) {
-            await runMcpServer({ mode: options.mode });
+            await runMcpServer({ mode: options.mode, log });
             return;
           }
           const server = await runMcpHttpServer(
@@ -72,6 +78,7 @@ export function createMcpCommand(): Command {
             options.allowHost,
             {
               mode: options.mode,
+              log,
               access: accessRequested
                 ? {
                     teamDomain: options.accessTeamDomain!,
@@ -81,7 +88,9 @@ export function createMcpCommand(): Command {
             }
           );
           const { port } = server.address() as AddressInfo;
-          console.error(`OmniFocus MCP server listening on http://127.0.0.1:${port}/mcp`);
+          log(
+            `OmniFocus MCP server ${packageJson.version} listening on http://127.0.0.1:${port}/mcp (mode ${options.mode})`
+          );
         }
       )
     );

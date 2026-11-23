@@ -100,7 +100,7 @@ describe('handleError', () => {
   it('serializes OmniFocusCliError with its statusCode', async () => {
     const { stdout } = await runHandleError('omnifocus_cli_error');
     expect(JSON.parse(stdout)).toEqual({
-      error: { name: 'cli_error', detail: 'bad request', statusCode: 400 },
+      error: { name: 'cli_error', detail: 'bad request', statusCode: 400, changes: 'none' },
     });
   });
 
@@ -112,6 +112,7 @@ describe('handleError', () => {
         detail: 'Task not found: foo',
         statusCode: 404,
         code: 'not_found',
+        changes: 'none',
       },
     });
   });
@@ -124,6 +125,7 @@ describe('handleError', () => {
         detail: 'Multiple Project matches: foo. Use an ID.',
         statusCode: 400,
         code: 'ambiguous',
+        changes: 'none',
       },
     });
   });

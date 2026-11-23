@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import * as runtime from '../omni/runtime.js';
 import { AutomationPermissionError, consentPreflight } from './consent.js';
-import { isOmniFocusErrorCode, OmniFocusError } from './errors.js';
+import { isChanges, isOmniFocusErrorCode, OmniFocusError } from './errors.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -19,10 +19,15 @@ const RUNTIME_SOURCE = Object.values(runtime)
  * Builds the Omni Automation script for one operation. Functions are embedded
  * as source rather than referenced by name, because a bundler may rename them.
  * Arguments go through JSON.parse so that "__proto__" stays an ordinary key.
+ * `deadline` is the epoch millisecond after which the script must not run.
  */
-export function composeOmniScript<A>(operation: (args: A) => unknown, args: A): string {
+export function composeOmniScript<A>(
+  operation: (args: A) => unknown,
+  args: A,
+  deadline: number
+): string {
   const encodedArgs = JSON.stringify(JSON.stringify(args ?? null));
-  return `${RUNTIME_SOURCE}\n(${String(runtime.invoke)})(${String(operation)}, JSON.parse(${encodedArgs}));`;
+  return `${RUNTIME_SOURCE}\n(${String(runtime.invoke)})(${String(operation)}, JSON.parse(${encodedArgs}), ${Number(deadline)});`;
 }
 
 /** Wraps an Omni Automation script in the JXA that hands it to OmniFocus. */
@@ -92,10 +97,13 @@ export function decodeOmniResult<R>(output: string): R {
   if (isRecord(envelope) && envelope.ok === true) return envelope.value as R;
   if (isRecord(envelope) && envelope.ok === false && isRecord(envelope.error)) {
     const { code, name, message } = envelope.error;
+    const changes = isChanges(envelope.error.changes) ? envelope.error.changes : undefined;
     if (isOmniFocusErrorCode(code) && code !== 'script_error') {
-      throw new OmniFocusError(code, String(message));
+      throw new OmniFocusError(code, String(message), { changes });
     }
-    throw new OmniFocusError('script_error', `OmniFocus script error: ${name}: ${message}`);
+    throw new OmniFocusError('script_error', `OmniFocus script error: ${name}: ${message}`, {
+      changes,
+    });
   }
   throw new OmniFocusError('bridge_error', 'OmniFocus returned an unrecognized result');
 }

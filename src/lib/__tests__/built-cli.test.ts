@@ -154,6 +154,7 @@ describe('built CLI against a fake database (mock executable, no Apple events)',
           detail: 'Task not found: Missing',
           statusCode: 404,
           code: 'not_found',
+          changes: 'none',
         },
       },
     });
@@ -165,11 +166,17 @@ describe('built CLI against a fake database (mock executable, no Apple events)',
           detail: 'Folder must be empty to delete',
           statusCode: 400,
           code: 'invalid',
+          changes: 'none',
         },
       },
     });
     expect((await cli('task', 'update', 'Seeded task', '--due', 'not a date')).json).toEqual({
-      error: { name: 'cli_error', detail: 'Invalid date: not a date', statusCode: 400 },
+      error: {
+        name: 'cli_error',
+        detail: 'Invalid date: not a date',
+        statusCode: 400,
+        changes: 'none',
+      },
     });
   });
 });
