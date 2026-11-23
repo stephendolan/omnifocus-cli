@@ -11,7 +11,8 @@ A command-line interface for OmniFocus on macOS.
 bun install -g @stephendolan/omnifocus-cli
 ```
 
-Requires [Bun](https://bun.sh) and macOS with OmniFocus installed.
+Requires Node.js 22.12 or later and macOS with OmniFocus installed. `npm install -g`
+works as well; the CLI runs under Node whichever tool installs it.
 
 ## Quick Start
 
@@ -28,9 +29,9 @@ of task update "Buy groceries" --complete   # Mark done
 
 ```bash
 of task list                        # List active tasks
-of task list --flagged              # Flagged tasks only
-of task list --project "Work"       # Filter by project
-of task list --tag "urgent"         # Filter by tag
+of task list --flagged              # Flagged tasks that are available
+of task list --project "Work"       # Filter by project ID or unique name
+of task list --tag "urgent"         # Filter by tag ID, name, or path
 of task list --completed            # Include completed
 
 of task create "Name" [options]
@@ -40,7 +41,7 @@ of task create "Name" [options]
   --defer <YYYY-MM-DD>              # Set defer date
   --planned <YYYY-MM-DD>            # Set planned date
   --flagged                         # Flag the task
-  --estimate <minutes>              # Time estimate
+  --estimate <minutes>              # Time estimate, in whole minutes
   --note <text>                     # Add note
 
 of task update <name|id> [options]
@@ -58,7 +59,7 @@ of task delete <name|id>            # Delete task
 
 ```bash
 of project list                     # List active projects
-of project list --folder "Work"     # Filter by folder
+of project list --folder "Work"     # Filter by folder ID or name
 of project list --status "on hold"  # Filter by status
 of project list --dropped           # Include dropped
 
@@ -88,7 +89,7 @@ of tag create "Child" --parent "Parent"  # Nested tag
 
 of tag view <name|path|id>          # View details
 of tag update <name> --name "New"   # Rename
-of tag update <name> --inactive     # Deactivate
+of tag update <name> --status "on hold"  # Put on hold
 of tag delete <name>                # Delete tag
 ```
 
@@ -266,6 +267,80 @@ of task list --flagged | jq '.[] | {name, due}'  # Specific fields
 }
 ```
 
+## References and filters
+
+A task, project, or folder is named by its ID or by its exact name. A name that
+more than one object of that kind carries is rejected with `ambiguous`, and the
+error lists each candidate's ID with its state, so the next call can use the ID.
+Finished tasks count: a repeating task shares its name with every completed
+occurrence. A tag is named by ID, by a unique name, or by a `Parent/Child` path.
+
+OmniFocus keeps a root task for every project, with the project's ID and name,
+and `list_tasks` returns it alongside ordinary tasks. A task update can change
+that root task's fields, such as its flag or due date. It cannot move, reorder,
+or delete it: those are project operations.
+
+`list_tasks.project` takes a project ID or unique name. `list_tasks.tag` takes a
+tag ID, name, or path, and `list_projects.folder` takes a folder ID or name;
+both include every tag or folder that carries the name. A filter that matches no
+project, tag, or folder returns `not_found`, so an empty list always means that
+nothing matched an object that exists.
+
+`list_tasks.flagged` returns flagged tasks that are available, including the
+ones OmniFocus marks next, due soon, or overdue. It leaves out blocked tasks:
+those deferred, waiting on an earlier task, or on hold.
+
+## Writes
+
+All MCP argument envelopes reject unknown fields. Updates require at least one
+supported change. Validation and reference resolution precede writes; supported
+idempotent updates succeed. Every written field is read back. If a write or its
+readback fails, the fields already written are restored and the restoration is
+checked. Completing and dropping a task run last and are not undone. Each error
+states what the request left behind; see [Errors](#errors).
+
+Names must not be empty, `estimatedMinutes` is a whole number, and a date must
+exist: `2026-02-30` is rejected rather than rolled into March. A tag named twice
+in one request is assigned once.
+
+`update_project.folder` accepts a folder ID or unique exact name; `null` or `""`
+moves to the library root. `update_tag.parent` accepts a tag ID, unique name or
+path; `null` moves to the tag root. `parentId` is an alias; conflicting parents
+and tag cycles fail. `update_task.project` accepts a project ID or unique name;
+`null` or `""` moves to the inbox. Omitted placement fields preserve location,
+and so does naming the project or inbox a task is already at the top of; a task
+nested under another task moves to the top level.
+
+Project create/update accepts `type`: `parallel`, `sequential`, or `single-action`.
+`singleActionList` is a boolean alias. Existing `sequential` remains available;
+contradictory arguments fail. Converting a single-action list to sequential
+requires explicit `type: "sequential"` or `singleActionList: false`. Project
+responses include `type`, `singleActionList`, and `folderId`; task responses add
+`projectId` and `parentTaskId`, and tag responses add `parentId`.
+
+Project status includes `done`, distinct from `dropped`. Project updates also
+accept `completed: true` (done) or `false` (active). Explicit status filters include
+matching projects regardless of default inactive exclusions. Existing project
+statistics retain their historical `parallelProjects` count, which includes
+single-action lists with `sequential: false`.
+
+`update_task.before` and `after` accept exact sibling task IDs and preserve task
+identity and descendants. Supply only one; ordering cannot combine with project,
+completed, or dropped changes. Anchors must share the immediate container.
+Project-scoped `list_tasks` accepts a project ID or unique name and returns native
+outline order with filters preserving relative order.
+
+CLI equivalents include `project create/update --type`, `--single-action-list`,
+`project update --folder ""`, `tag update --parent`, and `task update --before` or
+`--after`. Empty tag parent clears to root. `folder delete` and MCP `delete_folder`
+only delete empty folders and require full mode. Every delete checks that the
+object is gone and returns its `id` and `name`. Custom perspectives retain their
+existing `id` field and add stable `identifier`; `get_perspective_tasks.name` also
+accepts that identifier and switches the front window.
+
+Repeating-task completion through `update_task` is rejected before any write: its
+occurrence-creation semantics require a separate occurrence-aware contract.
+
 ## Errors
 
 A failed command prints a JSON `error` and exits with code 1. A failed MCP tool
@@ -330,6 +405,8 @@ seconds. `get_perspective_tasks` waits 60 seconds rather than 30.
 
 **Task not found**: Use exact name or ID. IDs appear in JSON output.
 
+**Multiple matches**: Use one of the IDs the error lists.
+
 **Date format**: Use ISO format `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM:SS`.
 
 ## Development
@@ -345,46 +422,3 @@ bun link        # Link globally as `of`
 ## License
 
 MIT
-
-### Structural updates
-
-All MCP argument envelopes reject unknown fields. Updates require at least one
-supported change. Validation and reference resolution precede writes; supported
-idempotent updates succeed. Write readback mismatches return errors. Reversible
-updates attempt verified restoration; lifecycle failures can report a partial
-outcome. Read state before retrying after a transport failure.
-
-`update_project.folder` accepts a folder ID or unique exact name; `null` or `""`
-moves to the library root. `update_tag.parent` accepts a tag ID, unique name or
-path; `null` moves to the tag root. `parentId` is an alias; conflicting parents
-and tag cycles fail. `update_task.project` accepts a project ID or unique name;
-`null` or `""` moves to the inbox. Omitted placement fields preserve location.
-
-Project create/update accepts `type`: `parallel`, `sequential`, or `single-action`.
-`singleActionList` is a boolean alias. Existing `sequential` remains available;
-contradictory arguments fail. Converting a single-action list to sequential
-requires explicit `type: "sequential"` or `singleActionList: false`. Project
-responses include `type`, `singleActionList`, and `folderId`; task responses add
-`projectId` and `parentTaskId`, and tag responses add `parentId`.
-
-Project status includes `done`, distinct from `dropped`. Project updates also
-accept `completed: true` (done) or `false` (active). Explicit status filters include
-matching projects regardless of default inactive exclusions. Existing project
-statistics retain their historical `parallelProjects` count, which includes
-single-action lists with `sequential: false`.
-
-`update_task.before` and `after` accept exact sibling task IDs and preserve task
-identity and descendants. Supply only one; ordering cannot combine with project,
-completed, or dropped changes. Anchors must share the immediate container.
-Project-scoped `list_tasks` accepts a project ID or unique name and returns native
-outline order with filters preserving relative order.
-
-CLI equivalents include `project create/update --type`, `--single-action-list`,
-`project update --folder ""`, `tag update --parent`, and `task update --before` or
-`--after`. Empty tag parent clears to root. `folder delete` and MCP `delete_folder`
-only delete empty folders and require full mode. Custom perspectives retain their
-existing `id` field and add stable `identifier`; `get_perspective_tasks.name` also
-accepts that identifier and switches the front window.
-
-Repeating-task completion through `update_task` is rejected before any write: its
-occurrence-creation semantics require a separate occurrence-aware contract.

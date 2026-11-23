@@ -9,13 +9,19 @@ import {
 import { consentPreflight, OMNIFOCUS_BUNDLE_ID } from './consent.js';
 import { OmniFocusError } from './errors.js';
 import {
+  folderCreate,
+  folderFilters,
+  parseArguments,
   parseMutation,
-  taskCreate,
-  taskUpdate,
   projectCreate,
+  projectFilters,
   projectMutation,
   tagCreate,
+  tagListOptions,
   tagUpdate,
+  taskCreate,
+  taskFilters,
+  taskUpdate,
 } from './mutations.js';
 import { parsePerspectiveRules } from './perspective-rules.js';
 import type {
@@ -39,6 +45,7 @@ import type {
   Folder,
   FolderFilters,
   CreateFolderResult,
+  Deleted,
 } from '../types.js';
 
 // get_perspective_tasks waits for OmniFocus to redraw the front window.
@@ -103,7 +110,7 @@ export class OmniFocus {
   }
 
   async listTasks(filters: TaskFilters = {}): Promise<Task[]> {
-    return this.read(omni.listTasks, filters);
+    return this.read(omni.listTasks, parseArguments(taskFilters, filters));
   }
 
   async getTask(idOrName: string): Promise<Task> {
@@ -119,7 +126,7 @@ export class OmniFocus {
     return this.write(omni.updateTask, { idOrName, changes });
   }
 
-  async deleteTask(idOrName: string): Promise<void> {
+  async deleteTask(idOrName: string): Promise<Deleted> {
     return this.write(omni.deleteTask, { idOrName });
   }
 
@@ -132,7 +139,7 @@ export class OmniFocus {
   }
 
   async getInboxCount(): Promise<number> {
-    return (await this.listInboxTasks()).length;
+    return this.read(omni.countInboxTasks);
   }
 
   async getTaskStats(): Promise<TaskStats> {
@@ -140,7 +147,7 @@ export class OmniFocus {
   }
 
   async listProjects(filters: ProjectFilters = {}): Promise<Project[]> {
-    return this.read(omni.listProjects, filters);
+    return this.read(omni.listProjects, parseArguments(projectFilters, filters));
   }
 
   async getProject(idOrName: string): Promise<Project> {
@@ -156,7 +163,7 @@ export class OmniFocus {
     return this.write(omni.updateProject, { idOrName, changes });
   }
 
-  async deleteProject(idOrName: string): Promise<void> {
+  async deleteProject(idOrName: string): Promise<Deleted> {
     return this.write(omni.deleteProject, { idOrName });
   }
 
@@ -182,7 +189,7 @@ export class OmniFocus {
   }
 
   async listTags(options: TagListOptions = {}): Promise<Tag[]> {
-    const { sortBy, ...filters } = options;
+    const { sortBy, ...filters } = parseArguments(tagListOptions, options);
     return this.sortTags(await this.read(omni.listTags, filters), sortBy);
   }
 
@@ -214,7 +221,7 @@ export class OmniFocus {
     return this.write(omni.updateTag, { idOrName, changes });
   }
 
-  async deleteTag(idOrName: string): Promise<void> {
+  async deleteTag(idOrName: string): Promise<Deleted> {
     return this.write(omni.deleteTag, { idOrName });
   }
 
@@ -223,18 +230,19 @@ export class OmniFocus {
   }
 
   async listFolders(filters: FolderFilters = {}): Promise<Folder[]> {
-    return this.read(omni.listFolders, filters);
+    return this.read(omni.listFolders, parseArguments(folderFilters, filters));
   }
 
   async getFolder(idOrName: string, filters: FolderFilters = {}): Promise<Folder> {
-    return this.read(omni.getFolder, { idOrName, includeDropped: filters.includeDropped });
+    const { includeDropped } = parseArguments(folderFilters, filters);
+    return this.read(omni.getFolder, { idOrName, includeDropped });
   }
 
   async createFolder(name: string): Promise<CreateFolderResult> {
-    return this.write(omni.createFolder, { name });
+    return this.write(omni.createFolder, parseArguments(folderCreate, { name }));
   }
 
-  async deleteFolder(idOrName: string): Promise<void> {
+  async deleteFolder(idOrName: string): Promise<Deleted> {
     return this.write(omni.deleteFolder, { idOrName });
   }
 }

@@ -140,9 +140,42 @@ describe('built CLI against a fake database (mock executable, no Apple events)',
     expect((await cli('folder', 'create', 'Seeded folder')).json).toMatchObject({
       alreadyExisted: true,
     });
-    expect((await cli('task', 'delete', 'Seeded inbox task')).exitCode).toBe(0);
-    expect((await cli('project', 'delete', 'Seeded project')).exitCode).toBe(0);
-    expect((await cli('tag', 'delete', 'Seeded tag')).exitCode).toBe(0);
+    expect((await cli('task', 'delete', 'Seeded inbox task')).json).toMatchObject({
+      message: 'Task deleted successfully',
+      name: 'Seeded inbox task',
+    });
+    expect((await cli('project', 'delete', 'Seeded project')).json).toMatchObject({
+      message: 'Project deleted successfully',
+      name: 'Seeded project',
+    });
+    expect((await cli('tag', 'delete', 'Seeded tag')).json).toMatchObject({
+      message: 'Tag deleted successfully',
+      name: 'Seeded tag',
+    });
+    expect((await cli('folder', 'create', 'Scratch')).json).toMatchObject({
+      alreadyExisted: false,
+    });
+  });
+
+  it('rejects option values it used to ignore', async () => {
+    for (const args of [
+      ['project', 'list', '--status', 'paused'],
+      ['tag', 'list', '--sort', 'recent'],
+      ['tag', 'list', '--unused-days', 'many'],
+      ['task', 'update', 'Seeded task', '--name', '', '--flag'],
+      ['task', 'update', 'Seeded task', '--estimate', '2.5x'],
+      ['task', 'list', '--tag', 'No such tag'],
+      ['task', 'delete', 'Seeded project'],
+    ]) {
+      const result = await cli(...args);
+      expect(result.exitCode).toBe(1);
+      expect(result.json.error.changes).toBe('none');
+      expect([400, 404]).toContain(result.json.error.statusCode);
+    }
+    expect((await cli('task', 'view', 'Seeded task')).json).toMatchObject({
+      name: 'Seeded task',
+      flagged: false,
+    });
   });
 
   it('exits unsuccessfully with a typed error', async () => {

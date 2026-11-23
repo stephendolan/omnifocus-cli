@@ -41,7 +41,7 @@ export function createTaskCommand(): Command {
     .option('-D, --defer <date>', 'Set defer date')
     .option('-P, --planned <date>', 'Set planned date')
     .option('-f, --flagged', 'Flag the task')
-    .option('-e, --estimate <minutes>', 'Estimated time in minutes', parseInt)
+    .option('-e, --estimate <minutes>', 'Estimated time in minutes', Number)
     .action(
       withErrorHandling(async (name, options) => {
         const of = new OmniFocus();
@@ -96,14 +96,14 @@ export function createTaskCommand(): Command {
     .option('-C, --incomplete', 'Mark as incomplete')
     .addOption(new Option('--drop', 'Mark as dropped').conflicts('undrop'))
     .option('--undrop', 'Restore a dropped task to active')
-    .option('-e, --estimate <minutes>', 'Estimated time in minutes', parseInt)
+    .option('-e, --estimate <minutes>', 'Estimated time in minutes', Number)
     .action(
       withErrorHandling(async (idOrName, options) => {
         const of = new OmniFocus();
         const updates: UpdateTaskOptions = {
           ...(options.before !== undefined && { before: options.before }),
           ...(options.after !== undefined && { after: options.after }),
-          ...(options.name && { name: options.name }),
+          ...(options.name !== undefined && { name: options.name }),
           ...(options.note !== undefined && { note: options.note }),
           ...(options.project !== undefined && { project: options.project }),
           ...(options.tag && { tags: options.tag }),
@@ -136,8 +136,8 @@ export function createTaskCommand(): Command {
     .action(
       withErrorHandling(async (idOrName) => {
         const of = new OmniFocus();
-        await of.deleteTask(idOrName);
-        outputJson({ message: 'Task deleted successfully' });
+        const { id, name } = await of.deleteTask(idOrName);
+        outputJson({ message: 'Task deleted successfully', id, name });
       })
     );
 

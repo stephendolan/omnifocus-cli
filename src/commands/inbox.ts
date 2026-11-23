@@ -40,7 +40,7 @@ export function createInboxCommand(): Command {
     .option('-D, --defer <date>', 'Set defer date')
     .option('-P, --planned <date>', 'Set planned date')
     .option('-f, --flagged', 'Flag the task')
-    .option('-e, --estimate <minutes>', 'Estimated time in minutes', parseInt)
+    .option('-e, --estimate <minutes>', 'Estimated time in minutes', Number)
     .action(
       withErrorHandling(async (name, options) => {
         const of = new OmniFocus();
