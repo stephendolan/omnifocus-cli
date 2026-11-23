@@ -12,8 +12,11 @@ function resolveProject(reference) { return resolveUnique(flattenedProjects, ref
 function projectType(project) {
   return project.containsSingletonActions ? 'single-action' : project.sequential ? 'sequential' : 'parallel';
 }
-function containerOf(task) { return task.assignedContainer || task.parent || task.containingProject || inbox; }
-function siblingsOf(container) { return container === inbox ? Array.from(inbox) : Array.from(container.tasks); }
+function containerOf(task) {
+  if (task.inInbox && !task.parent) return inbox;
+  return task.assignedContainer || task.parent || task.containingProject || inbox;
+}
+function siblingsOf(container) { return container === inbox ? Array.from(inbox) : Array.from(container.tasks || container); }
 function prepareMutation(kind, object, options) {
   const prepared = { tags: options.tags === undefined ? undefined : options.tags.map(findTag) };
   if (kind === 'project') {
