@@ -47,7 +47,7 @@ describe('Automation consent', () => {
 
   it('allows the requested operation when preflight grants access', async () => {
     const of = new OmniFocus();
-    const evaluate = mock(() => '[{"id":"Inbox","name":"Inbox"}]');
+    const evaluate = mock(() => '{"ok":true,"value":[{"id":"Inbox","name":"Inbox"}]}');
     of['executeJXA'] = async (script) =>
       runInNewContext(script, {
         ObjC: nativeBridge(),

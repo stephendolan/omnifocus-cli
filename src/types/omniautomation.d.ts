@@ -11,6 +11,11 @@
 //     }
 // }
 
+// Local amendment: FolderArray, ProjectArray, SectionArray, TagArray, and
+// TaskArray extend Array<Element> rather than the generated bare Array, whose
+// elements are `any` and would switch off checking for every collection item.
+// Reapply it after regenerating; src/omni/type-assertions.ts fails without it.
+
 // Alert
 
 declare class Alert {
@@ -51,19 +56,19 @@ declare class ApplyResult {}
 
 // FolderArray
 
-declare class FolderArray extends Array {
+declare class FolderArray extends Array<Folder> {
   byName(name: string): Folder | null;
 }
 
 // ProjectArray
 
-declare class ProjectArray extends Array {
+declare class ProjectArray extends Array<Project> {
   byName(name: string): Project | null;
 }
 
 // SectionArray
 
-declare class SectionArray extends Array {
+declare class SectionArray extends Array<Project | Folder> {
   byName(name: string): Project | Folder | null;
 }
 
@@ -77,7 +82,7 @@ declare class Library extends SectionArray {
 
 // TagArray
 
-declare class TagArray extends Array {
+declare class TagArray extends Array<Tag> {
   byName(name: string): Tag | null;
 }
 
@@ -91,7 +96,7 @@ declare class Tags extends TagArray {
 
 // TaskArray
 
-declare class TaskArray extends Array {
+declare class TaskArray extends Array<Task> {
   byName(name: string): Task | null;
 }
 

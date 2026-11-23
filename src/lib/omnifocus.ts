@@ -1,4 +1,12 @@
-import { OMNI_MUTATIONS } from './omni-mutations.js';
+import * as omni from '../omni/runtime.js';
+import {
+  composeOmniScript,
+  decodeOmniResult,
+  DEFAULT_TIMEOUT_MS,
+  runOsascript,
+  wrapOmniScript,
+} from './bridge.js';
+import { consentPreflight, OMNIFOCUS_BUNDLE_ID } from './consent.js';
 import {
   parseMutation,
   taskCreate,
@@ -8,15 +16,7 @@ import {
   tagCreate,
   tagUpdate,
 } from './mutations.js';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
-import { AutomationPermissionError, consentPreflight, OMNIFOCUS_BUNDLE_ID } from './consent.js';
-import {
-  parsePerspectiveRules,
-  PERSPECTIVE_RULES_HELPERS,
-  type PerspectiveRulesDefinition,
-  type PerspectiveRulesResult,
-} from './perspective-rules.js';
+import { parsePerspectiveRules } from './perspective-rules.js';
 import type {
   Task,
   Project,
@@ -27,6 +27,7 @@ import type {
   CreateProjectOptions,
   UpdateProjectOptions,
   Perspective,
+  PerspectiveRulesResult,
   Tag,
   TagListOptions,
   TagStats,
@@ -39,286 +40,22 @@ import type {
   CreateFolderResult,
 } from '../types.js';
 
-const execFileAsync = promisify(execFile);
+// get_perspective_tasks waits for OmniFocus to redraw the front window.
+const PERSPECTIVE_TIMEOUT_MS = 60_000;
 
 export class OmniFocus {
-  private readonly PROJECT_STATUS_MAP = {
-    active: 'Active',
-    'on hold': 'OnHold',
-    dropped: 'Dropped',
-    done: 'Done',
-  } as const;
+  private executeJXA = runOsascript;
 
-  private readonly OMNI_HELPERS = `
-    ${OMNI_MUTATIONS}
-    function serializeTask(task) {
-      const containingProject = task.containingProject;
-      const tagNames = task.tags.map(t => t.name);
-
-      return {
-        id: task.id.primaryKey,
-        name: task.name,
-        note: task.note || null,
-        completed: task.completed,
-        dropped: task.dropDate !== null,
-        effectivelyActive: task.effectiveActive,
-        flagged: task.flagged,
-        project: containingProject ? containingProject.name : null,
-        projectId: containingProject ? containingProject.id.primaryKey : null,
-        parentTaskId: task.parent && (!containingProject || task.parent !== containingProject.task) ? task.parent.id.primaryKey : null,
-        tags: tagNames,
-        defer: task.deferDate ? task.deferDate.toISOString() : null,
-        due: task.dueDate ? task.dueDate.toISOString() : null,
-        planned: task.plannedDate ? task.plannedDate.toISOString() : null,
-        estimatedMinutes: task.estimatedMinutes || null,
-        completionDate: task.completionDate ? task.completionDate.toISOString() : null,
-        added: task.added ? task.added.toISOString() : null,
-        modified: task.modified ? task.modified.toISOString() : null
-      };
-    }
-
-    function serializeProject(project) {
-      const parentFolder = project.parentFolder;
-      const allTasks = project.flattenedTasks;
-      const remainingTasks = allTasks.filter(t => !t.completed);
-      const tagNames = project.tags.map(t => t.name);
-
-      return {
-        id: project.id.primaryKey,
-        name: project.name,
-        note: project.note || null,
-        status: projectStatusToString(project.status),
-        folder: parentFolder ? parentFolder.name : null,
-        sequential: project.sequential,
-        type: projectType(project),
-        singleActionList: !!project.containsSingletonActions,
-        folderId: parentFolder ? parentFolder.id.primaryKey : null,
-        taskCount: allTasks.length,
-        remainingCount: remainingTasks.length,
-        tags: tagNames
-      };
-    }
-
-    function findTask(idOrName) {
-      for (const task of flattenedTasks) {
-        if (task.id.primaryKey === idOrName || task.name === idOrName) {
-          return task;
-        }
-      }
-      throw new Error("Task not found: " + idOrName);
-    }
-
-    function findProject(idOrName) {
-      for (const project of flattenedProjects) {
-        if (project.id.primaryKey === idOrName || project.name === idOrName) {
-          return project;
-        }
-      }
-      throw new Error("Project not found: " + idOrName);
-    }
-
-    function getTagPath(tag) {
-      const parts = [tag.name];
-      let current = tag.parent;
-      while (current) {
-        parts.unshift(current.name);
-        current = current.parent;
-      }
-      return parts.join('/');
-    }
-
-    function findTag(idOrName) {
-      for (const tag of flattenedTags) {
-        if (tag.id.primaryKey === idOrName) {
-          return tag;
-        }
-      }
-
-      if (idOrName.includes('/')) {
-        const matches = flattenedTags.filter(tag => getTagPath(tag) === idOrName);
-        if (matches.length > 1) throw new Error("Multiple tags found at path: " + idOrName);
-        if (matches.length === 1) return matches[0];
-        const literal = flattenedTags.filter(tag => tag.name === idOrName);
-        if (literal.length > 1) throw new Error("Multiple tags found: " + idOrName);
-        if (literal.length === 1) return literal[0];
-        throw new Error("Tag not found: " + idOrName);
-      }
-
-      const matches = flattenedTags.filter(tag => tag.name === idOrName);
-
-      if (matches.length === 0) {
-        throw new Error("Tag not found: " + idOrName);
-      }
-
-      if (matches.length > 1) {
-        const paths = matches.map(getTagPath);
-        throw new Error("Multiple tags found with name '" + idOrName + "'. Please use full path:\\n  " + paths.join('\\n  ') + "\\nOr use tag ID: " + matches.map(t => t.id.primaryKey).join(', '));
-      }
-
-      return matches[0];
-    }
-
-    function findByName(collection, name, typeName, required = true) {
-      for (const item of collection) {
-        if (item.name === name) {
-          return item;
-        }
-      }
-      if (required) throw new Error(typeName + " not found: " + name);
-      return null;
-    }
-
-    function assignTags(target, tagNames) {
-      for (const tagName of tagNames) {
-        const tag = findTag(tagName);
-        target.addTag(tag);
-      }
-    }
-
-    function replaceTagsOn(target, tagNames) {
-      const resolved = tagNames.map(findTag);
-      target.clearTags();
-      resolved.forEach(tag => target.addTag(tag));
-    }
-
-    function statusToString(status, StatusEnum) {
-      if (status === StatusEnum.Active) return 'active';
-      if (status === StatusEnum.OnHold) return 'on hold';
-      if (status === StatusEnum.Dropped) return 'dropped';
-      if (status === StatusEnum.Done) return 'done';
-      return 'dropped';
-    }
-
-    function stringToStatus(str, StatusEnum) {
-      if (str === 'active') return StatusEnum.Active;
-      if (str === 'on hold') return StatusEnum.OnHold;
-      if (str === 'dropped') return StatusEnum.Dropped;
-      throw new Error('Invalid status: ' + str);
-    }
-
-    const projectStatusToString = (status) => statusToString(status, Project.Status);
-    const tagStatusToString = (status) => statusToString(status, Tag.Status);
-    const folderStatusToString = (status) => {
-      if (status === Folder.Status.Active) return 'active';
-      return 'dropped';
-    };
-    const stringToProjectStatus = (str) => {
-      if (str === 'done') return Project.Status.Done;
-      return stringToStatus(str, Project.Status);
-    };
-    const stringToTagStatus = (str) => stringToStatus(str, Tag.Status);
-
-    function serializeFolder(folder, includeDropped = false) {
-      let childFolders = folder.folders;
-      if (!includeDropped) {
-        childFolders = childFolders.filter(c => c.effectiveActive);
-      }
-
-      return {
-        id: folder.id.primaryKey,
-        name: folder.name,
-        status: folderStatusToString(folder.status),
-        effectivelyActive: folder.effectiveActive,
-        parent: folder.parent ? folder.parent.name : null,
-        projectCount: folder.projects.length,
-        remainingProjectCount: folder.projects.filter(p => p.effectiveActive).length,
-        folderCount: folder.folders.length,
-        children: childFolders.map(child => serializeFolder(child, includeDropped))
-      };
-    }
-
-    function computeTopItems(items, keyFn, topN = 5) {
-      return items
-        .sort((a, b) => b[keyFn] - a[keyFn])
-        .slice(0, topN)
-        .map(item => ({ name: item.name, [keyFn]: item[keyFn] }));
-    }
-
-    function computeAverage(total, count) {
-      return count > 0 ? Math.round((total / count) * 10) / 10 : 0;
-    }
-
-    function serializeTag(tag, activeOnly = false) {
-      const tasks = tag.tasks;
-      const remainingTasks = tag.remainingTasks;
-      const includedTasks = activeOnly ? remainingTasks : tasks;
-
-      const dates = [];
-      if (tag.added) dates.push(tag.added);
-      if (tag.modified) dates.push(tag.modified);
-
-      for (const task of includedTasks) {
-        if (task.added) dates.push(task.added);
-        if (task.modified) dates.push(task.modified);
-        if (!activeOnly && task.completionDate) dates.push(task.completionDate);
-        if (!activeOnly && task.effectiveCompletionDate) dates.push(task.effectiveCompletionDate);
-      }
-
-      const lastActivity = dates.length > 0
-        ? dates.reduce((latest, current) => current > latest ? current : latest)
-        : null;
-
-      return {
-        id: tag.id.primaryKey,
-        name: tag.name,
-        taskCount: includedTasks.length,
-        remainingTaskCount: remainingTasks.length,
-        added: tag.added ? tag.added.toISOString() : null,
-        modified: tag.modified ? tag.modified.toISOString() : null,
-        lastActivity: lastActivity ? lastActivity.toISOString() : null,
-        active: tag.active,
-        status: tagStatusToString(tag.status),
-        parent: tag.parent ? tag.parent.name : null,
-        parentId: tag.parent ? tag.parent.id.primaryKey : null,
-        children: tag.children.map(c => c.name),
-        allowsNextAction: tag.allowsNextAction
-      };
-    }
-  `;
-
-  private async executeJXA(script: string, timeoutMs = 30000): Promise<string> {
-    const osascript = execFileAsync('osascript', ['-l', 'JavaScript', '-'], {
-      timeout: timeoutMs,
-      maxBuffer: 10 * 1024 * 1024,
-    });
-    // osascript's exit status reports failures; ignore EPIPE if it exits before reading stdin.
-    osascript.child.stdin?.on('error', () => {});
-    osascript.child.stdin?.end(script);
-
-    try {
-      const { stdout } = await osascript;
-      return stdout.trim();
-    } catch (error) {
-      const stderr = (error as { stderr?: string }).stderr;
-      const permission = stderr?.match(/OF_AUTOMATION_PERMISSION:(-?\d+)/);
-      if (permission) throw new AutomationPermissionError(Number(permission[1]));
-      if ((error as NodeJS.ErrnoException & { killed?: boolean }).killed) {
-        throw new Error(
-          `OmniFocus automation did not respond within ${timeoutMs}ms. Check OmniFocus and macOS Automation permissions in this login session.`,
-          { cause: error }
-        );
-      }
-      throw error;
-    }
-  }
-
-  private escapeString(str: string): string {
-    return str
-      .replace(/\\/g, '\\\\')
-      .replace(/"/g, '\\"')
-      .replace(/\n/g, '\\n')
-      .replace(/\r/g, '\\r')
-      .replace(/\t/g, '\\t');
-  }
-
-  private wrapOmniScript(omniScript: string): string {
-    return `
-      ${consentPreflight()}
-      const app = Application('OmniFocus');
-      app.includeStandardAdditions = true;
-      const result = app.evaluateJavascript(${JSON.stringify(omniScript.trim())});
-      result;
-    `.trim();
+  /** Runs one runtime function inside OmniFocus and returns its value. */
+  private async run<R>(operation: () => R): Promise<R>;
+  private async run<A, R>(operation: (args: A) => R, args: A, timeoutMs?: number): Promise<R>;
+  private async run<A, R>(
+    operation: (args: A) => R,
+    args?: A,
+    timeoutMs = DEFAULT_TIMEOUT_MS
+  ): Promise<R> {
+    const script = wrapOmniScript(composeOmniScript(operation, args as A));
+    return decodeOmniResult<R>(await this.executeJXA(script, timeoutMs));
   }
 
   async checkConsent(requestConsent = false) {
@@ -334,459 +71,88 @@ export class OmniFocus {
     };
   }
 
-  private buildTaskFilters(filters: TaskFilters): string {
-    const conditions: string[] = [];
-
-    if (!filters.includeCompleted) {
-      conditions.push('if (task.completed) continue;');
-    }
-    if (!filters.includeDropped) {
-      conditions.push('if (!task.effectiveActive) continue;');
-    }
-    if (filters.flagged) {
-      conditions.push('if (!task.flagged) continue;');
-      conditions.push('if (task.taskStatus !== Task.Status.Available) continue;');
-    }
-    if (filters.project) {
-      conditions.push(`
-        if (!task.containingProject || task.containingProject !== resolveProject("${this.escapeString(filters.project)}")) {
-          continue;
-        }
-      `);
-    }
-    if (filters.tag) {
-      conditions.push(`
-        if (!task.tags.some(t => t.name === "${this.escapeString(filters.tag)}")) {
-          continue;
-        }
-      `);
-    }
-
-    return conditions.join('\n    ');
-  }
-
-  private buildProjectFilters(filters: ProjectFilters): string {
-    const conditions: string[] = [];
-
-    if (!filters.includeDropped && !filters.status) {
-      conditions.push(
-        'if (project.status === Project.Status.Dropped || project.status === Project.Status.Done) continue;'
-      );
-      conditions.push(
-        'if (project.parentFolder && !project.parentFolder.effectiveActive) continue;'
-      );
-    }
-    if (filters.status) {
-      const statusCheck = this.PROJECT_STATUS_MAP[filters.status];
-      conditions.push(`if (project.status !== Project.Status.${statusCheck}) continue;`);
-    }
-    if (filters.folder) {
-      conditions.push(
-        `if (!project.parentFolder || project.parentFolder.name !== "${this.escapeString(filters.folder)}") continue;`
-      );
-    }
-
-    return conditions.join('\n    ');
-  }
-
   async listTasks(filters: TaskFilters = {}): Promise<Task[]> {
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        const results = [];
-        for (const task of ${filters.project ? `resolveProject(${JSON.stringify(filters.project)}).flattenedTasks` : 'flattenedTasks'}) {
-          ${this.buildTaskFilters(filters)}
-          results.push(serializeTask(task));
-        }
-        return JSON.stringify(results);
-      })();
-    `;
-
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
-    return JSON.parse(output);
-  }
-
-  async createTask(options: CreateTaskOptions): Promise<Task> {
-    options = parseMutation(taskCreate, options, false);
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        ${JSON.stringify(options.tags || [])}.map(findTag);
-        ${
-          options.project
-            ? `const targetProject = resolveProject("${this.escapeString(options.project)}");
-             const task = new Task("${this.escapeString(options.name)}", targetProject);`
-            : `const task = new Task("${this.escapeString(options.name)}");`
-        }
-
-        try { mutate("task", task, ${JSON.stringify(options)}); }
-        catch (error) {
-          try { const createdId = task.id.primaryKey; deleteObject(task); if (flattenedTasks.some(t => t.id.primaryKey === createdId)) throw new Error('Created task still exists'); }
-          catch (cleanupError) { throw new Error(error.message + '; created task cleanup failed: ' + cleanupError.message); }
-          throw error;
-        }
-
-        return JSON.stringify(serializeTask(task));
-      })();
-    `;
-
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
-    return JSON.parse(output);
-  }
-
-  async updateTask(idOrName: string, options: UpdateTaskOptions): Promise<Task> {
-    options = parseMutation(taskUpdate, options, true);
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        const task = findTask("${this.escapeString(idOrName)}");
-        mutate("task", task, ${JSON.stringify(options)});
-        return JSON.stringify(serializeTask(task));
-      })();
-    `;
-
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
-    return JSON.parse(output);
-  }
-
-  async deleteTask(idOrName: string): Promise<void> {
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        deleteObject(findTask("${this.escapeString(idOrName)}"));
-      })();
-    `;
-
-    await this.executeJXA(this.wrapOmniScript(omniScript));
-  }
-
-  async listProjects(filters: ProjectFilters = {}): Promise<Project[]> {
-    const filterCode = this.buildProjectFilters(filters);
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        const results = [];
-        for (const project of flattenedProjects) {
-          ${filterCode}
-          results.push(serializeProject(project));
-        }
-        return JSON.stringify(results);
-      })();
-    `;
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
-    return JSON.parse(output);
-  }
-
-  async createProject(options: CreateProjectOptions): Promise<Project> {
-    options = parseMutation(projectCreate, options, false);
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        ${JSON.stringify(options.tags || [])}.map(findTag);
-        ${
-          options.folder
-            ? `const targetFolder = resolveFolder("${this.escapeString(options.folder)}");
-             const project = new Project("${this.escapeString(options.name)}", targetFolder);`
-            : `const project = new Project("${this.escapeString(options.name)}");`
-        }
-
-        try { mutate("project", project, ${JSON.stringify(options)}); }
-        catch (error) {
-          try { const createdId = project.id.primaryKey; deleteObject(project); if (flattenedProjects.some(p => p.id.primaryKey === createdId)) throw new Error('Created project still exists'); }
-          catch (cleanupError) { throw new Error(error.message + '; created project cleanup failed: ' + cleanupError.message); }
-          throw error;
-        }
-
-        return JSON.stringify(serializeProject(project));
-      })();
-    `;
-
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
-    return JSON.parse(output);
-  }
-
-  async updateProject(idOrName: string, options: UpdateProjectOptions): Promise<Project> {
-    options = parseMutation(projectMutation, options, true);
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        const project = findProject("${this.escapeString(idOrName)}");
-        mutate("project", project, ${JSON.stringify(options)});
-        return JSON.stringify(serializeProject(project));
-      })();
-    `;
-
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
-    return JSON.parse(output);
-  }
-
-  async deleteProject(idOrName: string): Promise<void> {
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        deleteObject(findProject("${this.escapeString(idOrName)}"));
-      })();
-    `;
-
-    await this.executeJXA(this.wrapOmniScript(omniScript));
-  }
-
-  async listInboxTasks(): Promise<Task[]> {
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        const results = [];
-        inbox.apply(task => {
-          if (!task.completed && task.effectiveActive) results.push(serializeTask(task));
-        });
-        return JSON.stringify(results);
-      })();
-    `;
-
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
-    return JSON.parse(output);
-  }
-
-  async getInboxCount(): Promise<number> {
-    const tasks = await this.listInboxTasks();
-    return tasks.length;
-  }
-
-  async searchTasks(query: string): Promise<Task[]> {
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        const results = [];
-        const searchQuery = "${this.escapeString(query)}".toLowerCase();
-
-        for (const task of flattenedTasks) {
-          if (task.completed) continue;
-          if (!task.effectiveActive) continue;
-
-          const name = task.name.toLowerCase();
-          const note = (task.note || '').toLowerCase();
-
-          if (name.includes(searchQuery) || note.includes(searchQuery)) {
-            results.push(serializeTask(task));
-          }
-        }
-
-        return JSON.stringify(results);
-      })();
-    `;
-
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
-    return JSON.parse(output);
+    return this.run(omni.listTasks, filters);
   }
 
   async getTask(idOrName: string): Promise<Task> {
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        const task = findTask("${this.escapeString(idOrName)}");
-        return JSON.stringify(serializeTask(task));
-      })();
-    `;
+    return this.run(omni.getTask, { idOrName });
+  }
 
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
-    return JSON.parse(output);
+  async createTask(options: CreateTaskOptions): Promise<Task> {
+    return this.run(omni.createTask, parseMutation(taskCreate, options));
+  }
+
+  async updateTask(idOrName: string, options: UpdateTaskOptions): Promise<Task> {
+    const changes = parseMutation(taskUpdate, options, true);
+    return this.run(omni.updateTask, { idOrName, changes });
+  }
+
+  async deleteTask(idOrName: string): Promise<void> {
+    return this.run(omni.deleteTask, { idOrName });
+  }
+
+  async searchTasks(query: string): Promise<Task[]> {
+    return this.run(omni.searchTasks, { query });
+  }
+
+  async listInboxTasks(): Promise<Task[]> {
+    return this.run(omni.listInboxTasks);
+  }
+
+  async getInboxCount(): Promise<number> {
+    return (await this.listInboxTasks()).length;
+  }
+
+  async getTaskStats(): Promise<TaskStats> {
+    return this.run(omni.getTaskStats);
+  }
+
+  async listProjects(filters: ProjectFilters = {}): Promise<Project[]> {
+    return this.run(omni.listProjects, filters);
   }
 
   async getProject(idOrName: string): Promise<Project> {
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        const project = findProject("${this.escapeString(idOrName)}");
-        return JSON.stringify(serializeProject(project));
-      })();
-    `;
+    return this.run(omni.getProject, { idOrName });
+  }
 
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
-    return JSON.parse(output);
+  async createProject(options: CreateProjectOptions): Promise<Project> {
+    return this.run(omni.createProject, parseMutation(projectCreate, options));
+  }
+
+  async updateProject(idOrName: string, options: UpdateProjectOptions): Promise<Project> {
+    const changes = parseMutation(projectMutation, options, true);
+    return this.run(omni.updateProject, { idOrName, changes });
+  }
+
+  async deleteProject(idOrName: string): Promise<void> {
+    return this.run(omni.deleteProject, { idOrName });
+  }
+
+  async getProjectStats(): Promise<ProjectStats> {
+    return this.run(omni.getProjectStats);
   }
 
   async listPerspectives(): Promise<Perspective[]> {
-    const omniScript = `
-      (() => {
-        const results = [];
-
-        const builtInNames = ['Inbox', 'Flagged', 'Forecast', 'Projects', 'Tags', 'Nearby', 'Review'];
-        for (const name of builtInNames) {
-          results.push({ id: name, name: name });
-        }
-
-        const customPerspectives = Perspective.Custom.all;
-        for (const perspective of customPerspectives) {
-          results.push({ id: perspective.name, name: perspective.name, identifier: perspective.identifier });
-        }
-
-        return JSON.stringify(results);
-      })();
-    `;
-
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
-    return JSON.parse(output);
+    return this.run(omni.listPerspectives);
   }
 
   async getPerspectiveRules(idOrName: string): Promise<PerspectiveRulesResult> {
-    const omniScript = `
-      ${PERSPECTIVE_RULES_HELPERS}
-      (() => {
-        const perspective = findCustomPerspective(${JSON.stringify(idOrName)});
-        return JSON.stringify({
-          id: perspective.identifier,
-          name: perspective.name,
-          definition: readPerspectiveRules(perspective)
-        });
-      })();
-    `;
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
-    return JSON.parse(output);
+    return this.run(omni.getPerspectiveRules, { idOrName });
   }
 
-  async updatePerspectiveRules(
-    idOrName: string,
-    input: PerspectiveRulesDefinition
-  ): Promise<PerspectiveRulesResult> {
+  async updatePerspectiveRules(idOrName: string, input: unknown): Promise<PerspectiveRulesResult> {
     const definition = parsePerspectiveRules(input);
-    const omniScript = `
-      ${PERSPECTIVE_RULES_HELPERS}
-      (() => {
-        const perspective = findCustomPerspective(${JSON.stringify(idOrName)});
-        const original = readPerspectiveRules(perspective);
-        const definition = JSON.parse(${JSON.stringify(JSON.stringify(definition))});
-        try {
-          perspective.archivedFilterRules = definition.archivedFilterRules;
-          perspective.archivedTopLevelFilterAggregation = definition.archivedTopLevelFilterAggregation;
-          const actual = readPerspectiveRules(perspective);
-          if (canonicalRules(actual) !== canonicalRules(definition)) {
-            throw new Error('OmniFocus did not retain the requested perspective rules');
-          }
-          return JSON.stringify({ id: perspective.identifier, name: perspective.name, definition: actual });
-        } catch (error) {
-          const failures = [];
-          for (const key of ['archivedFilterRules', 'archivedTopLevelFilterAggregation']) {
-            try {
-              let current;
-              try {
-                current = canonicalRules(perspective[key]);
-              } catch {
-                current = undefined;
-              }
-              if (current !== canonicalRules(original[key])) {
-                perspective[key] = original[key];
-              }
-            } catch (restoreError) {
-              failures.push(key + ': ' + restoreError.message);
-            }
-          }
-          try {
-            if (canonicalRules(readPerspectiveRules(perspective)) !== canonicalRules(original)) {
-              failures.push('restored definition differs from original');
-            }
-          } catch (verifyError) {
-            failures.push(verifyError.message);
-          }
-          if (failures.length) {
-            throw new Error(error.message + '; perspective rules rollback failed: ' + failures.join('; '));
-          }
-          throw error;
-        }
-      })();
-    `;
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
-    return JSON.parse(output);
+    return this.run(omni.updatePerspectiveRules, { idOrName, definition });
   }
 
-  async getPerspectiveTasks(perspectiveName: string): Promise<Task[]> {
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        const doc = document;
-        const windows = doc.windows;
-
-        if (windows.length === 0) {
-          throw new Error("No OmniFocus window is open. Please open an OmniFocus window and try again.");
-        }
-
-        const win = windows[0];
-        const perspectiveName = "${this.escapeString(perspectiveName)}";
-
-        const builtInPerspectives = {
-          'inbox': Perspective.BuiltIn.Inbox,
-          'flagged': Perspective.BuiltIn.Flagged,
-          'forecast': Perspective.BuiltIn.Forecast,
-          'projects': Perspective.BuiltIn.Projects,
-          'tags': Perspective.BuiltIn.Tags,
-          'nearby': Perspective.BuiltIn.Nearby,
-          'review': Perspective.BuiltIn.Review
-        };
-
-        const lowerName = perspectiveName.toLowerCase();
-        if (builtInPerspectives[lowerName]) {
-          win.perspective = builtInPerspectives[lowerName];
-        } else {
-          const customPerspective = Perspective.Custom.byIdentifier(perspectiveName) || Perspective.Custom.byName(perspectiveName);
-          if (customPerspective) {
-            win.perspective = customPerspective;
-          } else {
-            throw new Error("Perspective not found: " + perspectiveName);
-          }
-        }
-
-        const content = win.content;
-        if (!content) {
-          throw new Error("No content available in window");
-        }
-
-        const tasks = [];
-        content.rootNode.apply(node => {
-          const obj = node.object;
-          if (obj instanceof Task) {
-            tasks.push(serializeTask(obj));
-          }
-        });
-
-        return JSON.stringify(tasks);
-      })();
-    `;
-
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript), 60000);
-    return JSON.parse(output);
+  async getPerspectiveTasks(name: string): Promise<Task[]> {
+    return this.run(omni.getPerspectiveTasks, { name }, PERSPECTIVE_TIMEOUT_MS);
   }
 
   async listTags(options: TagListOptions = {}): Promise<Tag[]> {
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        const results = [];
-        const now = new Date();
-        const activeOnly = ${!!options.activeOnly};
-
-        for (const tag of flattenedTags) {
-          const serialized = serializeTag(tag, activeOnly);
-          results.push(serialized);
-        }
-
-        ${
-          options.unusedDays
-            ? `
-          const cutoffDate = new Date(now.getTime() - (${options.unusedDays} * 24 * 60 * 60 * 1000));
-          const filtered = results.filter(tag => {
-            if (!tag.lastActivity) return true;
-            return new Date(tag.lastActivity) < cutoffDate;
-          });
-          return JSON.stringify(filtered);
-        `
-            : 'return JSON.stringify(results);'
-        }
-      })();
-    `;
-
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
-    const tags = JSON.parse(output);
-
-    return this.sortTags(tags, options.sortBy);
+    const { sortBy, ...filters } = options;
+    return this.sortTags(await this.run(omni.listTags, filters), sortBy);
   }
 
   private sortTags(tags: Tag[], sortBy: string = 'name'): Tag[] {
@@ -804,326 +170,40 @@ export class OmniFocus {
     return tags.sort(sortFns[sortBy] || sortFns.name);
   }
 
-  async getTagStats(): Promise<TagStats> {
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        const allTags = [];
-        for (const tag of flattenedTags) {
-          allTags.push(serializeTag(tag));
-        }
-
-        const activeTags = allTags.filter(t => t.active);
-        const tagsWithTasks = allTags.filter(t => t.taskCount > 0);
-        const unusedTags = allTags.filter(t => t.taskCount === 0);
-
-        const totalTasks = tagsWithTasks.reduce((sum, t) => sum + t.taskCount, 0);
-        const avgTasksPerTag = computeAverage(totalTasks, tagsWithTasks.length);
-
-        const mostUsedTags = computeTopItems(allTags, 'taskCount');
-        const leastUsedTags = computeTopItems(
-          tagsWithTasks.map(t => ({ ...t, taskCount: -t.taskCount })),
-          'taskCount'
-        ).map(t => ({ name: t.name, taskCount: -t.taskCount }));
-
-        const now = new Date();
-        const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
-        const staleTags = allTags
-          .filter(t => t.lastActivity && new Date(t.lastActivity) < thirtyDaysAgo)
-          .map(t => ({
-            name: t.name,
-            daysSinceActivity: Math.floor((now - new Date(t.lastActivity)) / (24 * 60 * 60 * 1000))
-          }))
-          .sort((a, b) => b.daysSinceActivity - a.daysSinceActivity);
-
-        return JSON.stringify({
-          totalTags: allTags.length,
-          activeTags: activeTags.length,
-          tagsWithTasks: tagsWithTasks.length,
-          unusedTags: unusedTags.length,
-          avgTasksPerTag,
-          mostUsedTags,
-          leastUsedTags,
-          staleTags
-        });
-      })();
-    `;
-
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
-    return JSON.parse(output);
+  async getTag(idOrName: string): Promise<Tag> {
+    return this.run(omni.getTag, { idOrName });
   }
 
   async createTag(options: CreateTagOptions): Promise<Tag> {
-    options = parseMutation(tagCreate, options, false);
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        ${
-          options.parent
-            ? `const parentTag = findTag("${this.escapeString(options.parent)}");
-             const tag = new Tag("${this.escapeString(options.name)}", parentTag);`
-            : `const tag = new Tag("${this.escapeString(options.name)}", tags.beginning);`
-        }
-
-        try { mutate("tag", tag, ${JSON.stringify(options)}); }
-        catch (error) {
-          try { const createdId = tag.id.primaryKey; deleteObject(tag); if (flattenedTags.some(t => t.id.primaryKey === createdId)) throw new Error('Created tag still exists'); }
-          catch (cleanupError) { throw new Error(error.message + '; created tag cleanup failed: ' + cleanupError.message); }
-          throw error;
-        }
-
-        return JSON.stringify(serializeTag(tag));
-      })();
-    `;
-
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
-    return JSON.parse(output);
-  }
-
-  async getTag(idOrName: string): Promise<Tag> {
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        const tag = findTag("${this.escapeString(idOrName)}");
-        return JSON.stringify(serializeTag(tag));
-      })();
-    `;
-
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
-    return JSON.parse(output);
+    return this.run(omni.createTag, parseMutation(tagCreate, options));
   }
 
   async updateTag(idOrName: string, options: UpdateTagOptions): Promise<Tag> {
-    options = parseMutation(tagUpdate, options, true);
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        const tag = findTag("${this.escapeString(idOrName)}");
-        mutate("tag", tag, ${JSON.stringify(options)});
-        return JSON.stringify(serializeTag(tag));
-      })();
-    `;
-
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
-    return JSON.parse(output);
+    const changes = parseMutation(tagUpdate, options, true);
+    return this.run(omni.updateTag, { idOrName, changes });
   }
 
   async deleteTag(idOrName: string): Promise<void> {
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        deleteObject(findTag("${this.escapeString(idOrName)}"));
-      })();
-    `;
-
-    await this.executeJXA(this.wrapOmniScript(omniScript));
+    return this.run(omni.deleteTag, { idOrName });
   }
 
-  async getTaskStats(): Promise<TaskStats> {
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        const allTasks = Array.from(flattenedTasks);
-        const now = new Date();
-
-        const activeTasks = allTasks.filter(t => !t.completed && t.effectiveActive);
-        const completedTasks = allTasks.filter(t => t.completed);
-        const flaggedTasks = activeTasks.filter(t => t.flagged);
-        const overdueActiveTasks = activeTasks.filter(t => t.dueDate && t.dueDate < now);
-
-        const tasksWithEstimates = allTasks.filter(t => t.estimatedMinutes && t.estimatedMinutes > 0);
-        const totalEstimatedMinutes = tasksWithEstimates.reduce((sum, t) => sum + (t.estimatedMinutes || 0), 0);
-        const avgEstimatedMinutes = tasksWithEstimates.length > 0
-          ? Math.round(totalEstimatedMinutes / tasksWithEstimates.length)
-          : null;
-
-        const totalNonDropped = allTasks.filter(t => t.effectiveActive || t.completed).length;
-        const completionRate = totalNonDropped > 0
-          ? Math.round((completedTasks.length / totalNonDropped) * 100)
-          : 0;
-
-        const projectCounts = {};
-        for (const task of allTasks) {
-          if (!task.effectiveActive && !task.completed) continue;
-          const projectName = task.containingProject ? task.containingProject.name : 'Inbox';
-          projectCounts[projectName] = (projectCounts[projectName] || 0) + 1;
-        }
-        const tasksByProject = computeTopItems(
-          Object.entries(projectCounts).map(([name, count]) => ({ name, taskCount: count })),
-          'taskCount'
-        );
-
-        const tagCounts = {};
-        for (const task of allTasks) {
-          if (!task.effectiveActive && !task.completed) continue;
-          for (const tag of task.tags) {
-            tagCounts[tag.name] = (tagCounts[tag.name] || 0) + 1;
-          }
-        }
-        const tasksByTag = computeTopItems(
-          Object.entries(tagCounts).map(([name, count]) => ({ name, taskCount: count })),
-          'taskCount'
-        );
-
-        return JSON.stringify({
-          totalTasks: allTasks.length,
-          activeTasks: activeTasks.length,
-          completedTasks: completedTasks.length,
-          flaggedTasks: flaggedTasks.length,
-          overdueActiveTasks: overdueActiveTasks.length,
-          avgEstimatedMinutes,
-          tasksWithEstimates: tasksWithEstimates.length,
-          completionRate,
-          tasksByProject,
-          tasksByTag
-        });
-      })();
-    `;
-
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
-    return JSON.parse(output);
-  }
-
-  async getProjectStats(): Promise<ProjectStats> {
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        const allProjects = Array.from(flattenedProjects);
-
-        function isProjectEffectivelyActive(p) {
-          if (p.status === Project.Status.Dropped || p.status === Project.Status.Done) return false;
-          if (p.parentFolder && !p.parentFolder.effectiveActive) return false;
-          return true;
-        }
-
-        const effectivelyActiveProjects = allProjects.filter(isProjectEffectivelyActive);
-        const activeProjects = effectivelyActiveProjects.filter(p => p.status === Project.Status.Active);
-        const onHoldProjects = effectivelyActiveProjects.filter(p => p.status === Project.Status.OnHold);
-        const droppedProjects = allProjects.filter(p => p.status === Project.Status.Dropped);
-        const doneProjects = allProjects.filter(p => p.status === Project.Status.Done);
-        const sequentialProjects = effectivelyActiveProjects.filter(p => p.sequential);
-        const parallelProjects = effectivelyActiveProjects.filter(p => !p.sequential);
-
-        const totalTasks = effectivelyActiveProjects.reduce((sum, p) => sum + p.flattenedTasks.length, 0);
-        const totalRemaining = effectivelyActiveProjects.reduce((sum, p) => {
-          return sum + p.flattenedTasks.filter(t => !t.completed).length;
-        }, 0);
-
-        const avgTasksPerProject = computeAverage(totalTasks, effectivelyActiveProjects.length);
-        const avgRemainingPerProject = computeAverage(totalRemaining, effectivelyActiveProjects.length);
-
-        const completionRates = effectivelyActiveProjects
-          .filter(p => p.flattenedTasks.length > 0)
-          .map(p => {
-            const total = p.flattenedTasks.length;
-            const completed = p.flattenedTasks.filter(t => t.completed).length;
-            return (completed / total) * 100;
-          });
-
-        const avgCompletionRate = completionRates.length > 0
-          ? Math.round(completionRates.reduce((sum, rate) => sum + rate, 0) / completionRates.length)
-          : 0;
-
-        const projectsWithMostTasks = computeTopItems(
-          effectivelyActiveProjects.map(p => ({ name: p.name, taskCount: p.flattenedTasks.length })),
-          'taskCount'
-        );
-
-        const projectsWithMostRemaining = computeTopItems(
-          effectivelyActiveProjects
-            .map(p => ({ name: p.name, remainingCount: p.flattenedTasks.filter(t => !t.completed).length }))
-            .filter(p => p.remainingCount > 0),
-          'remainingCount'
-        );
-
-        return JSON.stringify({
-          totalProjects: allProjects.length,
-          activeProjects: activeProjects.length,
-          onHoldProjects: onHoldProjects.length,
-          droppedProjects: droppedProjects.length,
-          doneProjects: doneProjects.length,
-          sequentialProjects: sequentialProjects.length,
-          parallelProjects: parallelProjects.length,
-          avgTasksPerProject,
-          avgRemainingPerProject,
-          avgCompletionRate,
-          projectsWithMostTasks,
-          projectsWithMostRemaining
-        });
-      })();
-    `;
-
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
-    return JSON.parse(output);
-  }
-
-  async createFolder(name: string): Promise<CreateFolderResult> {
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        const name = "${this.escapeString(name)}";
-        const existing = findByName(folders, name, "Folder", false);
-        const folder = existing || new Folder(name, library.ending);
-        return JSON.stringify({ ...serializeFolder(folder), alreadyExisted: existing !== null });
-      })();
-    `;
-
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
-    return JSON.parse(output);
-  }
-
-  async deleteFolder(idOrName: string): Promise<void> {
-    await this.executeJXA(
-      this.wrapOmniScript(`
-      ${this.OMNI_HELPERS}
-      const folder = resolveFolder(${JSON.stringify(idOrName)});
-      if (folder.projects.length || folder.folders.length) throw new Error('Folder must be empty to delete');
-      deleteObject(folder);
-    `)
-    );
+  async getTagStats(): Promise<TagStats> {
+    return this.run(omni.getTagStats);
   }
 
   async listFolders(filters: FolderFilters = {}): Promise<Folder[]> {
-    const includeDropped = filters.includeDropped ?? false;
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        const includeDropped = ${includeDropped};
-        const results = [];
-        for (const folder of folders) {
-          if (!includeDropped && !folder.effectiveActive) continue;
-          results.push(serializeFolder(folder, includeDropped));
-        }
-        return JSON.stringify(results);
-      })();
-    `;
-
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
-    return JSON.parse(output);
+    return this.run(omni.listFolders, filters);
   }
 
   async getFolder(idOrName: string, filters: FolderFilters = {}): Promise<Folder> {
-    const includeDropped = filters.includeDropped ?? false;
-    const omniScript = `
-      ${this.OMNI_HELPERS}
-      (() => {
-        const includeDropped = ${includeDropped};
+    return this.run(omni.getFolder, { idOrName, includeDropped: filters.includeDropped });
+  }
 
-        function findFolder(idOrName) {
-          for (const folder of flattenedFolders) {
-            if (folder.id.primaryKey === idOrName || folder.name === idOrName) {
-              return folder;
-            }
-          }
-          throw new Error("Folder not found: " + idOrName);
-        }
+  async createFolder(name: string): Promise<CreateFolderResult> {
+    return this.run(omni.createFolder, { name });
+  }
 
-        const folder = findFolder("${this.escapeString(idOrName)}");
-        return JSON.stringify(serializeFolder(folder, includeDropped));
-      })();
-    `;
-
-    const output = await this.executeJXA(this.wrapOmniScript(omniScript));
-    return JSON.parse(output);
+  async deleteFolder(idOrName: string): Promise<void> {
+    return this.run(omni.deleteFolder, { idOrName });
   }
 }

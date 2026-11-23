@@ -10,11 +10,10 @@
   "scripts": {
     "build": "bun run tsup",
     "dev": "bun run src/cli.ts",
-    "start": "bun dist/cli.js",
     "lint": "bun run oxlint src",
     "format": "bun run biome format --write src",
     "format:check": "bun run biome format src",
-    "typecheck": "bun run tsc --noEmit",
+    "typecheck": "bun run tsc --noEmit && bun run tsc --noEmit -p src/omni",
     "test": "bun test",
     "link": "bun run build && bun link",
     "prepublishOnly": "bun run build"
