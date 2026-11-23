@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { outputJson } from '../lib/output.js';
 import { withErrorHandling } from '../lib/command-utils.js';
 import { OmniFocus } from '../lib/omnifocus.js';
@@ -23,7 +23,7 @@ export function createTaskCommand(): Command {
         const filters: TaskFilters = {
           includeCompleted: options.completed,
           ...(options.flagged && { flagged: true }),
-          ...(options.project && { project: options.project }),
+          ...(options.project !== undefined && { project: options.project }),
           ...(options.tag && { tag: options.tag }),
         };
         const tasks = await of.listTasks(filters);
@@ -65,25 +65,47 @@ export function createTaskCommand(): Command {
     .description('Update an existing task')
     .option('-n, --name <name>', 'New name')
     .option('--note <text>', 'New note')
-    .option('-p, --project <name>', 'Move to project')
+    .option('-p, --project <name>', 'Move to project (empty clears to inbox)')
+    .addOption(
+      new Option('--before <task-id>', 'Place before a sibling').conflicts([
+        'after',
+        'project',
+        'complete',
+        'incomplete',
+        'drop',
+        'undrop',
+      ])
+    )
+    .addOption(
+      new Option('--after <task-id>', 'Place after a sibling').conflicts([
+        'before',
+        'project',
+        'complete',
+        'incomplete',
+        'drop',
+        'undrop',
+      ])
+    )
     .option('-t, --tag <tags...>', 'Replace tags')
     .option('-d, --due <date>', 'Set due date')
     .option('-D, --defer <date>', 'Set defer date')
     .option('-P, --planned <date>', 'Set planned date')
-    .option('-f, --flag', 'Flag the task')
+    .addOption(new Option('-f, --flag', 'Flag the task').conflicts('unflag'))
     .option('-F, --unflag', 'Unflag the task')
-    .option('-c, --complete', 'Mark as completed')
+    .addOption(new Option('-c, --complete', 'Mark as completed').conflicts('incomplete'))
     .option('-C, --incomplete', 'Mark as incomplete')
-    .option('--drop', 'Mark as dropped')
+    .addOption(new Option('--drop', 'Mark as dropped').conflicts('undrop'))
     .option('--undrop', 'Restore a dropped task to active')
     .option('-e, --estimate <minutes>', 'Estimated time in minutes', parseInt)
     .action(
       withErrorHandling(async (idOrName, options) => {
         const of = new OmniFocus();
         const updates: UpdateTaskOptions = {
+          ...(options.before !== undefined && { before: options.before }),
+          ...(options.after !== undefined && { after: options.after }),
           ...(options.name && { name: options.name }),
           ...(options.note !== undefined && { note: options.note }),
-          ...(options.project && { project: options.project }),
+          ...(options.project !== undefined && { project: options.project }),
           ...(options.tag && { tags: options.tag }),
           ...(options.due !== undefined && {
             due: options.due ? parseDateTime(options.due) : null,

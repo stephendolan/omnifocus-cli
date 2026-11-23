@@ -1,4 +1,15 @@
+import type { z } from 'zod';
+import type {
+  taskCreate,
+  taskUpdate,
+  projectCreate,
+  projectMutation,
+  tagCreate,
+  tagUpdate,
+} from './lib/mutations.js';
 export interface Task {
+  projectId?: string | null;
+  parentTaskId?: string | null;
   id: string;
   name: string;
   note: string | null;
@@ -18,6 +29,9 @@ export interface Task {
 }
 
 export interface Project {
+  type?: 'parallel' | 'sequential' | 'single-action';
+  singleActionList?: boolean;
+  folderId?: string | null;
   id: string;
   name: string;
   note: string | null;
@@ -33,66 +47,32 @@ export interface TaskFilters {
   includeCompleted?: boolean;
   includeDropped?: boolean;
   flagged?: boolean;
-  project?: string;
+  project?: string | null;
   tag?: string;
 }
 
 export interface ProjectFilters {
   includeDropped?: boolean;
-  status?: 'active' | 'on hold' | 'dropped';
-  folder?: string;
+  status?: 'active' | 'on hold' | 'dropped' | 'done';
+  folder?: string | null;
 }
 
-export interface CreateTaskOptions {
-  name: string;
-  note?: string;
-  project?: string;
-  tags?: string[];
-  defer?: string;
-  due?: string;
-  planned?: string;
-  flagged?: boolean;
-  estimatedMinutes?: number;
-}
+export type CreateTaskOptions = z.input<typeof taskCreate>;
 
-export interface UpdateTaskOptions {
-  name?: string;
-  note?: string;
-  project?: string;
-  tags?: string[];
-  defer?: string | null;
-  due?: string | null;
-  planned?: string | null;
-  flagged?: boolean;
-  estimatedMinutes?: number;
-  completed?: boolean;
-  dropped?: boolean;
-}
+export type UpdateTaskOptions = z.input<typeof taskUpdate>;
 
-export interface CreateProjectOptions {
-  name: string;
-  note?: string;
-  folder?: string;
-  sequential?: boolean;
-  tags?: string[];
-  status?: 'active' | 'on hold' | 'dropped';
-}
+export type CreateProjectOptions = z.input<typeof projectCreate>;
 
-export interface UpdateProjectOptions {
-  name?: string;
-  note?: string;
-  folder?: string;
-  sequential?: boolean;
-  tags?: string[];
-  status?: 'active' | 'on hold' | 'dropped';
-}
+export type UpdateProjectOptions = z.input<typeof projectMutation>;
 
 export interface Perspective {
+  identifier?: string;
   id: string;
   name: string;
 }
 
 export interface Tag {
+  parentId?: string | null;
   id: string;
   name: string;
   taskCount: number;
@@ -172,13 +152,6 @@ export interface ProjectStats {
   projectsWithMostRemaining: Array<{ name: string; remainingCount: number }>;
 }
 
-export interface CreateTagOptions {
-  name: string;
-  parent?: string;
-  status?: 'active' | 'on hold' | 'dropped';
-}
+export type CreateTagOptions = z.input<typeof tagCreate>;
 
-export interface UpdateTagOptions {
-  name?: string;
-  status?: 'active' | 'on hold' | 'dropped';
-}
+export type UpdateTagOptions = z.input<typeof tagUpdate>;
