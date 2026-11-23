@@ -1,184 +1,25 @@
-import { describe, expect, it, mock } from 'bun:test';
-import { runInNewContext } from 'node:vm';
-import { OmniFocus } from '../omnifocus.js';
-import { createMcpServer } from '../../mcp/server.js';
+import { describe, expect, it } from 'bun:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { createMcpServer } from '../../mcp/server.js';
+import { OmniFocusError } from '../errors.js';
+import { fakeOmniFocus } from './fixtures/fake-omnifocus.js';
 
-function database() {
-  const projects: any[] = [],
-    folders: any[] = [],
-    tags: any[] = [],
-    tasks: any[] = [];
-  let next = 0;
-  const library: any = { ending: { container: null } };
-  const inbox: any = [];
-  inbox.ending = { container: inbox };
-  class Base {
-    id = { primaryKey: String(++next) };
-    note = '';
-    tags: any[] = [];
-    clearTags() {
-      this.tags = [];
-    }
-    addTag(tag: any) {
-      this.tags.push(tag);
-    }
-    constructor(public name: string) {}
-  }
-  class Project extends Base {
-    static Status = { Active: 'active', OnHold: 'on hold', Dropped: 'dropped', Done: 'done' };
-    status = 'active';
-    sequential = false;
-    containsSingletonActions = false;
-    parentFolder: any = null;
-    tasks: any[] = [];
-    get remainingTasks() {
-      return this.tasks.filter((t) => !t.completed);
-    }
-    get flattenedTasks() {
-      return this.tasks;
-    }
-    get ending() {
-      return { container: this };
-    }
-    constructor(name: string, folder?: any) {
-      super(name);
-      this.parentFolder = folder || null;
-      projects.push(this);
-    }
-  }
-  class Folder extends Base {
-    static Status = { Active: 'active', Dropped: 'dropped' };
-    status = 'active';
-    effectiveActive = true;
-    parent = null;
-    folders: any[] = [];
-    get projects() {
-      return projects.filter((p) => p.parentFolder === this);
-    }
-    get ending() {
-      return { container: this };
-    }
-    constructor(name: string) {
-      super(name);
-      folders.push(this);
-    }
-  }
-  class Tag extends Base {
-    static Status = { Active: 'active', OnHold: 'on hold', Dropped: 'dropped' };
-    status = 'active';
-    parent: any = null;
-    tasks: any[] = [];
-    allowsNextAction = true;
-    get children() {
-      return tags.filter((t) => t.parent === this);
-    }
-    get remainingTasks() {
-      return this.tasks.filter((t) => !t.completed);
-    }
-    get flattenedTasks() {
-      return this.tasks;
-    }
-    get ending() {
-      return { container: this };
-    }
-    constructor(name: string, parent?: any) {
-      super(name);
-      this.parent = parent?.container === null ? null : parent || null;
-      tags.push(this);
-    }
-  }
-  class Task extends Base {
-    completed = false;
-    dropDate = null;
-    flagged = false;
-    effectiveActive = true;
-    deferDate = null;
-    dueDate = null;
-    plannedDate = null;
-    estimatedMinutes = null;
-    parent = null;
-    children: any[] = [];
-    get containingProject() {
-      return Array.isArray(this.assignedContainer) ? null : this.assignedContainer;
-    }
-    get before() {
-      return { anchor: this, after: false };
-    }
-    get after() {
-      return { anchor: this, after: true };
-    }
-    constructor(
-      name: string,
-      public assignedContainer: any = inbox
-    ) {
-      super(name);
-      tasks.push(this);
-      (assignedContainer.tasks || assignedContainer).push(this);
-    }
-  }
-  const moveTasks = (items: any[], position: any) => {
-    for (const task of items) {
-      const old = task.assignedContainer.tasks || task.assignedContainer;
-      old.splice(old.indexOf(task), 1);
-      const container = position.anchor ? position.anchor.assignedContainer : position.container;
-      const siblings = container.tasks || container;
-      siblings.splice(
-        position.anchor
-          ? siblings.indexOf(position.anchor) + Number(position.after)
-          : siblings.length,
-        0,
-        task
-      );
-      task.assignedContainer = container;
-    }
-  };
-  const rootTags: any = tags;
-  rootTags.ending = { container: null };
-  const context = {
-    Project,
-    Folder,
-    Tag,
-    Task,
-    library,
-    inbox,
-    folders,
-    tags: rootTags,
-    flattenedProjects: projects,
-    flattenedSections: projects,
-    flattenedFolders: folders,
-    flattenedTags: tags,
-    get flattenedTasks() {
-      return projects.flatMap((p) => p.tasks).concat(inbox);
-    },
-    moveTasks,
-    moveSections: (items: any[], position: any) =>
-      items.forEach((p) => {
-        p.parentFolder = position.container;
-      }),
-    moveTags: (items: any[], position: any) =>
-      items.forEach((t) => {
-        t.parent = position.container;
-      }),
-  };
-  const of = new OmniFocus();
-  of['executeJXA'] = mock(async (script: string) =>
-    runInNewContext(script, {
-      ObjC: { import() {}, bindFunction() {} },
-      $: {
-        NSAppleEventDescriptor: { descriptorWithBundleIdentifier: () => ({ aeDesc: {} }) },
-        AEDeterminePermissionToAutomateTarget: () => 0,
-      },
-      Application: () => ({ evaluateJavascript: (code: string) => runInNewContext(code, context) }),
-    })
+const idOf = (object: { id: { primaryKey: string } }) => object.id.primaryKey;
+const namesOf = (list: { name: string }[]) => list.map((item) => item.name);
+
+async function failure(promise: Promise<unknown>): Promise<OmniFocusError> {
+  const error = await promise.then(
+    () => new Error('Expected a rejection'),
+    (reason: unknown) => reason
   );
-  return { of, Project, Folder, Tag, Task, projects, moveTasks, context };
+  expect(error).toBeInstanceOf(OmniFocusError);
+  return error as OmniFocusError;
 }
 
 describe('hierarchy mutations', () => {
   it('creates and converts all project types without replacing the project', async () => {
-    const { of } = database();
+    const { of } = fakeOmniFocus();
     const p = await of.createProject({ name: 'List', singleActionList: true });
     expect(p).toMatchObject({ type: 'single-action', singleActionList: true, sequential: false });
     for (const type of ['parallel', 'sequential', 'single-action'] as const) {
@@ -190,14 +31,15 @@ describe('hierarchy mutations', () => {
     ).rejects.toThrow('Conflicting');
     expect((await of.getProject(p.id)).type).toBe('single-action');
   });
+
   it('moves by folder ID/name, clears to root, and exposes done separately', async () => {
-    const { of, Folder } = database();
+    const { of, Folder } = fakeOmniFocus();
     const f = new Folder('Folder');
     const p = await of.createProject({ name: 'Project' });
-    for (const folder of [f.id.primaryKey, 'Folder', null, '']) {
+    for (const folder of [idOf(f), 'Folder', null, '']) {
       expect(await of.updateProject(p.id, { folder })).toMatchObject({
         folder: folder ? 'Folder' : null,
-        folderId: folder ? f.id.primaryKey : null,
+        folderId: folder ? idOf(f) : null,
       });
     }
     expect(await of.updateProject(p.id, { completed: true })).toMatchObject({ status: 'done' });
@@ -206,8 +48,20 @@ describe('hierarchy mutations', () => {
       status: 'dropped',
     });
   });
+
+  it('creates a project inside a folder and leaves an unchanged folder alone', async () => {
+    const { of, Folder, Project } = fakeOmniFocus();
+    const f = new Folder('Folder');
+    const first = new Project('First', f);
+    const created = await of.createProject({ name: 'Second', folder: 'Folder' });
+    new Project('Third', f);
+    expect(created).toMatchObject({ folder: 'Folder', folderId: idOf(f) });
+    await of.updateProject(idOf(first), { folder: 'Folder', note: 'kept in place' });
+    expect(namesOf(f.projects)).toEqual(['First', 'Second', 'Third']);
+  });
+
   it('reparents tags while preserving identity and rejects cycles', async () => {
-    const { of } = database();
+    const { of } = fakeOmniFocus();
     const parent = await of.createTag({ name: 'Parent' });
     const child = await of.createTag({ name: 'Child' });
     expect(await of.updateTag(child.id, { parent: parent.id })).toMatchObject({
@@ -218,45 +72,91 @@ describe('hierarchy mutations', () => {
     await expect(of.updateTag(parent.id, { parent: child.id })).rejects.toThrow('descendant');
     expect(await of.updateTag(child.id, { parent: null })).toMatchObject({ parent: null });
   });
+
+  it('accepts agreeing parent and parentId and rejects conflicting ones', async () => {
+    const { of, Tag } = fakeOmniFocus();
+    const a = new Tag('A');
+    const b = new Tag('B');
+    const child = new Tag('Child');
+    expect(await of.updateTag(idOf(child), { parent: 'A', parentId: idOf(a) })).toMatchObject({
+      parentId: idOf(a),
+    });
+    const error = await failure(of.updateTag(idOf(child), { parent: 'A', parentId: idOf(b) }));
+    expect(error).toMatchObject({ code: 'invalid', statusCode: 400 });
+    expect(child.parent).toBe(a);
+  });
+
   it('orders original tasks and rejects cross-container or conflicting moves', async () => {
-    const { of, Project, Task } = database();
+    const { of, Project, Task } = fakeOmniFocus();
     const p = new Project('Sequence');
     p.sequential = true;
     const c = new Task('C', p),
       a = new Task('A', p),
       b = new Task('B', p);
-    await of.updateTask(a.id.primaryKey, { before: b.id.primaryKey });
-    await of.updateTask(c.id.primaryKey, { after: b.id.primaryKey });
-    expect((await of.listTasks({ project: p.id.primaryKey })).map((t) => t.id)).toEqual([
-      a.id.primaryKey,
-      b.id.primaryKey,
-      c.id.primaryKey,
+    await of.updateTask(idOf(a), { before: idOf(b) });
+    await of.updateTask(idOf(c), { after: idOf(b) });
+    expect((await of.listTasks({ project: idOf(p) })).map((t) => t.id)).toEqual([
+      idOf(a),
+      idOf(b),
+      idOf(c),
     ]);
-    await of.updateTask(c.id.primaryKey, { before: a.id.primaryKey });
-    expect(p.tasks.map((t) => t.name)).toEqual(['C', 'A', 'B']);
+    await of.updateTask(idOf(c), { before: idOf(a) });
+    expect(namesOf(p.tasks)).toEqual(['C', 'A', 'B']);
     const outsider = new Task('Other', new Project('Other'));
-    await expect(
-      of.updateTask(c.id.primaryKey, { before: outsider.id.primaryKey })
-    ).rejects.toThrow('sibling');
-    await expect(
-      of.updateTask(c.id.primaryKey, { before: a.id.primaryKey, completed: true })
-    ).rejects.toThrow('Ordering');
+    await expect(of.updateTask(idOf(c), { before: idOf(outsider) })).rejects.toThrow('sibling');
+    await expect(of.updateTask(idOf(c), { before: idOf(c) })).rejects.toThrow('itself');
+    await expect(of.updateTask(idOf(c), { before: 'missing' })).rejects.toThrow(
+      'Task not found: missing'
+    );
+    await expect(of.updateTask(idOf(c), { before: idOf(a), completed: true })).rejects.toThrow(
+      'Ordering'
+    );
+    expect(namesOf(p.tasks)).toEqual(['C', 'A', 'B']);
   });
+
+  it('orders subtasks under a parent task and top-level inbox tasks', async () => {
+    const { of, Project, Task, context } = fakeOmniFocus();
+    const group = new Task('Group', new Project('Project'));
+    const one = new Task('One', group),
+      two = new Task('Two', group);
+    await of.updateTask(idOf(two), { before: idOf(one) });
+    expect(namesOf(group.tasks)).toEqual(['Two', 'One']);
+    expect(await of.getTask(idOf(two))).toMatchObject({ parentTaskId: idOf(group) });
+
+    const first = new Task('First'),
+      second = new Task('Second');
+    await of.updateTask(idOf(first), { after: idOf(second) });
+    expect(namesOf(context.inbox)).toEqual(['Second', 'First']);
+    await expect(of.updateTask(idOf(first), { before: idOf(one) })).rejects.toThrow('sibling');
+  });
+
   it('resolves tags before clearing existing assignments or applying a rename', async () => {
-    const { of, Project, Tag } = database();
-    const p = new Project('Original'),
-      t = new Tag('Keep');
-    p.tags = [t];
-    await expect(
-      of.updateProject(p.id.primaryKey, { name: 'Changed', tags: ['Missing'] })
-    ).rejects.toThrow('not found');
-    expect(await of.getProject(p.id.primaryKey)).toMatchObject({
-      name: 'Original',
-      tags: ['Keep'],
-    });
+    const { of, Project, Tag } = fakeOmniFocus();
+    const p = new Project('Original');
+    p.addTag(new Tag('Keep'));
+    const error = await failure(of.updateProject(idOf(p), { name: 'Changed', tags: ['Missing'] }));
+    expect(error).toMatchObject({ code: 'not_found', statusCode: 404 });
+    expect(await of.getProject(idOf(p))).toMatchObject({ name: 'Original', tags: ['Keep'] });
   });
+
+  it('replaces tags on tasks and projects by ID, name, or path', async () => {
+    const { of, Project, Tag, Task } = fakeOmniFocus();
+    const parent = new Tag('Area');
+    const nested = new Tag('Work', parent);
+    const plain = new Tag('Home');
+    const p = new Project('Project');
+    const task = new Task('Task', p);
+    task.addTag(plain);
+    expect(await of.updateTask(idOf(task), { tags: ['Area/Work', idOf(parent)] })).toMatchObject({
+      tags: ['Work', 'Area'],
+    });
+    expect(await of.updateProject(idOf(p), { tags: ['Home'] })).toMatchObject({ tags: ['Home'] });
+    expect(await of.updateTask(idOf(task), { tags: [] })).toMatchObject({ tags: [] });
+    expect(nested.tasks).toEqual([]);
+  });
+
   it('restores both underlying type properties after a setter mutates and throws', async () => {
-    const { of, Project } = database();
+    const { of, Project } = fakeOmniFocus();
     const p = new Project('Original');
     p.containsSingletonActions = true;
     p.sequential = true;
@@ -272,26 +172,34 @@ describe('hierarchy mutations', () => {
         }
       },
     });
-    await expect(of.updateProject(p.id.primaryKey, { type: 'parallel' })).rejects.toThrow(
-      'Setter failed'
-    );
+    await expect(of.updateProject(idOf(p), { type: 'parallel' })).rejects.toThrow('Setter failed');
     expect(p.containsSingletonActions).toBe(true);
     expect(p.sequential).toBe(true);
   });
-  it('moves an inbox task whose assigned container is a distinct inbox wrapper', async () => {
-    const { of, Project, Task, context } = database();
+
+  it('moves a task between the inbox and a project when every inbox read is a new wrapper', async () => {
+    const { of, Project, Task, context } = fakeOmniFocus();
+    expect(context.inbox).not.toBe(context.inbox);
     const p = new Project('Destination');
     const task = new Task('Inbox task');
-    task.assignedContainer = new Proxy(context.inbox, {});
-    expect(await of.updateTask(task.id.primaryKey, { project: p.id.primaryKey })).toMatchObject({
-      projectId: p.id.primaryKey,
+    task.assignedContainer = context.inbox;
+    expect(await of.updateTask(idOf(task), { project: idOf(p) })).toMatchObject({
+      projectId: idOf(p),
+      parentTaskId: null,
     });
-    expect((await of.listTasks({ project: p.id.primaryKey })).map((t) => t.id)).toEqual([
-      task.id.primaryKey,
-    ]);
+    expect((await of.listTasks({ project: idOf(p) })).map((t) => t.id)).toEqual([idOf(task)]);
+    for (const project of [null, '']) {
+      await of.updateTask(idOf(task), { project: idOf(p) });
+      expect(await of.updateTask(idOf(task), { project })).toMatchObject({
+        project: null,
+        projectId: null,
+      });
+      expect(namesOf(context.inbox)).toEqual(['Inbox task']);
+    }
   });
+
   it('rejects repeating completion before changing fields or creating occurrences', async () => {
-    const { of, Project, Task } = database();
+    const { of, Project, Task } = fakeOmniFocus();
     const p = new Project('Recurring');
     const task = new Task('Keep', p);
     Object.assign(task, {
@@ -300,24 +208,28 @@ describe('hierarchy mutations', () => {
         new Task('Occurrence', p);
       },
     });
-    await expect(
-      of.updateTask(task.id.primaryKey, { name: 'Wrong', completed: true })
-    ).rejects.toThrow('Repeating task');
-    expect(p.tasks.map((t) => t.name)).toEqual(['Keep']);
+    const error = await failure(of.updateTask(idOf(task), { name: 'Wrong', completed: true }));
+    expect(error.message).toContain('Repeating task');
+    expect(error.code).toBe('invalid');
+    expect(namesOf(p.tasks)).toEqual(['Keep']);
   });
+
   it('reports an ignored reorder and preserves the original order', async () => {
-    const { of, Project, Task, context } = database();
+    const { of, Project, Task, context } = fakeOmniFocus();
     const p = new Project('Sequence');
     const a = new Task('A', p),
       b = new Task('B', p);
     context.moveTasks = () => {};
-    await expect(of.updateTask(a.id.primaryKey, { after: b.id.primaryKey })).rejects.toThrow(
-      'verification'
-    );
-    expect(p.tasks.map((t) => t.id.primaryKey)).toEqual([a.id.primaryKey, b.id.primaryKey]);
+    const error = await failure(of.updateTask(idOf(a), { after: idOf(b) }));
+    expect(error).toMatchObject({
+      code: 'verification_failed',
+      message: 'Write verification failed: order',
+    });
+    expect(p.tasks.map(idOf)).toEqual([idOf(a), idOf(b)]);
   });
+
   it('rejects unsupported arguments through MCP without applying valid siblings', async () => {
-    const { of } = database();
+    const { of } = fakeOmniFocus();
     const p = await of.createProject({ name: 'Original' });
     const [ct, st] = InMemoryTransport.createLinkedPair();
     const server = createMcpServer({ omniFocus: of });
@@ -340,5 +252,198 @@ describe('hierarchy mutations', () => {
       await client.close();
       await server.close();
     }
+  });
+});
+
+describe('write verification and restoration', () => {
+  it('applies every task field and reads each one back', async () => {
+    const { of, Project, Task } = fakeOmniFocus();
+    const task = new Task('Before', new Project('Project'));
+    const updated = await of.updateTask(idOf(task), {
+      name: 'After',
+      note: 'line one\nline "two"',
+      flagged: true,
+      estimatedMinutes: 25,
+      due: '2026-12-01T10:00:00.123Z',
+      defer: '2026-11-30',
+      planned: '2026-11-29T08:00:00Z',
+    });
+    expect(updated).toMatchObject({
+      name: 'After',
+      note: 'line one\nline "two"',
+      flagged: true,
+      estimatedMinutes: 25,
+      due: '2026-12-01T10:00:00.123Z',
+      planned: '2026-11-29T08:00:00.000Z',
+    });
+    expect(await of.updateTask(idOf(task), { due: null, defer: '' })).toMatchObject({
+      due: null,
+      defer: null,
+    });
+  });
+
+  it('undoes earlier writes in a task update when a later write fails', async () => {
+    const { of, Project, Task, Tag, context } = fakeOmniFocus();
+    const home = new Project('Home');
+    const task = new Task('Original', home);
+    const other = new Task('Other', home);
+    task.addTag(new Tag('Kept'));
+    new Tag('New');
+    task.flagged = true;
+    const destination = new Project('Destination');
+    const move = context.moveTasks;
+    context.moveTasks = () => {
+      context.moveTasks = move;
+      throw new Error('Move refused');
+    };
+    const error = await failure(
+      of.updateTask(idOf(task), {
+        name: 'Renamed',
+        flagged: false,
+        due: '2026-12-01',
+        project: idOf(destination),
+        tags: ['New'],
+      })
+    );
+    expect(error.message).toContain('Move refused');
+    expect(error.code).toBe('script_error');
+    expect(await of.getTask(idOf(task))).toMatchObject({
+      name: 'Original',
+      flagged: true,
+      due: null,
+      projectId: idOf(home),
+      tags: ['Kept'],
+    });
+    expect(home.tasks.map(idOf)).toEqual([idOf(task), idOf(other)]);
+  });
+
+  it('reports a partial write when a value cannot be put back', async () => {
+    const { of, Project, Task, context } = fakeOmniFocus();
+    const task = new Task('Original', new Project('Home'));
+    let name = 'Original';
+    Object.defineProperty(task, 'name', {
+      get: () => name,
+      set: (value) => {
+        if (value === 'Original') throw new Error('Rename refused');
+        name = value;
+      },
+    });
+    context.moveTasks = () => {
+      throw new Error('Move refused');
+    };
+    const error = await failure(of.updateTask(idOf(task), { name: 'Renamed', project: null }));
+    expect(error.code).toBe('partial_write');
+    expect(error.message).toBe(
+      'Move refused; restoration failed: project: Move refused; name: Rename refused'
+    );
+    expect(name).toBe('Renamed');
+  });
+
+  it('undoes reversible writes before a lifecycle write and reports a failed lifecycle write as partial', async () => {
+    const { of, Project, Task } = fakeOmniFocus();
+    const task = new Task('Original', new Project('Home'));
+    Object.assign(task, { markComplete: () => {} });
+    const error = await failure(of.updateTask(idOf(task), { name: 'Renamed', completed: true }));
+    expect(error.code).toBe('partial_write');
+    expect(error.message).toBe(
+      'Write verification failed: completed; lifecycle write outcome may be partial; read before retrying'
+    );
+    expect(task.name).toBe('Renamed');
+
+    const untouched = new Task('Untouched', new Project('Other'));
+    Object.defineProperty(untouched, 'flagged', {
+      get: () => false,
+      set: () => {},
+    });
+    const reverted = await failure(
+      of.updateTask(idOf(untouched), { name: 'Renamed', flagged: true, completed: true })
+    );
+    expect(reverted).toMatchObject({
+      code: 'verification_failed',
+      message: 'Write verification failed: flagged',
+    });
+    expect(untouched.name).toBe('Untouched');
+    expect(untouched.completed).toBe(false);
+  });
+
+  it('completes, reopens, drops, and restores a task', async () => {
+    const { of, Project, Task } = fakeOmniFocus();
+    const task = new Task('Task', new Project('Home'));
+    expect(await of.updateTask(idOf(task), { completed: true })).toMatchObject({
+      completed: true,
+    });
+    expect(await of.updateTask(idOf(task), { completed: false })).toMatchObject({
+      completed: false,
+      completionDate: null,
+    });
+    expect(await of.updateTask(idOf(task), { dropped: true })).toMatchObject({
+      dropped: true,
+      effectivelyActive: false,
+    });
+    expect(await of.updateTask(idOf(task), { dropped: false })).toMatchObject({
+      dropped: false,
+      effectivelyActive: true,
+    });
+  });
+
+  it('puts a project and a tag back among their original neighbors after a failed move', async () => {
+    const { of, Folder, Project, Tag, context } = fakeOmniFocus();
+    const source = new Folder('Source');
+    const target = new Folder('Target');
+    const [, middle] = ['A', 'B', 'C'].map((name) => new Project(name, source));
+    const clearTags = middle.clearTags.bind(middle);
+    let refuse = true;
+    middle.clearTags = () => {
+      if (refuse) {
+        refuse = false;
+        throw new Error('Tags refused');
+      }
+      clearTags();
+    };
+    await expect(
+      of.updateProject(idOf(middle), { folder: idOf(target), tags: [] })
+    ).rejects.toThrow('Tags refused');
+    expect(namesOf(source.projects)).toEqual(['A', 'B', 'C']);
+    expect(namesOf(target.projects)).toEqual([]);
+
+    const parent = new Tag('Parent');
+    const [, second] = ['One', 'Two', 'Three'].map((name) => new Tag(name));
+    Object.defineProperty(second, 'status', {
+      get: () => Tag.Status.Active,
+      set: () => {},
+    });
+    await expect(
+      of.updateTag(idOf(second), { parent: idOf(parent), status: 'dropped' })
+    ).rejects.toThrow('Write verification failed: status');
+    expect(namesOf(context.tags)).toEqual(['Parent', 'One', 'Two', 'Three']);
+    expect(namesOf(parent.children)).toEqual([]);
+  });
+
+  it('deletes a created object whose remaining writes fail, and says so when it cannot', async () => {
+    const { of, Tag, context } = fakeOmniFocus();
+    new Tag('Real');
+    await expect(of.createTask({ name: 'Task', tags: ['Missing'] })).rejects.toThrow(
+      'Tag not found: Missing'
+    );
+    expect(context.flattenedTasks).toEqual([]);
+
+    const move = context.moveTasks;
+    let moves = 0;
+    context.moveTasks = (...args: Parameters<typeof move>) => {
+      if (++moves === 1) throw new Error('Move refused');
+      move(...args);
+    };
+    await expect(of.createTask({ name: 'Task', project: null, tags: ['Real'] })).rejects.toThrow(
+      'Move refused'
+    );
+    expect(context.flattenedTasks).toEqual([]);
+
+    moves = 0;
+    context.deleteObject = () => {};
+    const error = await failure(of.createTask({ name: 'Stuck', project: null }));
+    expect(error.code).toBe('partial_write');
+    expect(error.message).toBe(
+      'Move refused; created task cleanup failed: Created task still exists'
+    );
   });
 });

@@ -28,6 +28,7 @@ async function runHandleError(
     | 'omnifocus_cli_error'
     | 'error_not_found'
     | 'error_multiple'
+    | 'error_text_only'
     | 'error_plain'
     | 'non_error'
 ): Promise<HandleErrorResult> {
@@ -37,7 +38,7 @@ async function runHandleError(
     await writeFile(
       script,
       `
-import { handleError, OmniFocusCliError } from '${join(process.cwd(), 'src/lib/errors.ts')}';
+import { handleError, OmniFocusCliError, OmniFocusError } from '${join(process.cwd(), 'src/lib/errors.ts')}';
 
 let error;
 switch (${JSON.stringify(scenario)}) {
@@ -45,10 +46,13 @@ switch (${JSON.stringify(scenario)}) {
     error = new OmniFocusCliError('bad request', 400);
     break;
   case 'error_not_found':
-    error = new Error('Task not found');
+    error = new OmniFocusError('not_found', 'Task not found: foo');
     break;
   case 'error_multiple':
-    error = new Error('Multiple matches for "foo"');
+    error = new OmniFocusError('ambiguous', 'Multiple Project matches: foo. Use an ID.');
+    break;
+  case 'error_text_only':
+    error = new Error('Task not found');
     break;
   case 'error_plain':
     error = new Error('boom');
@@ -100,21 +104,34 @@ describe('handleError', () => {
     });
   });
 
-  it('maps "not found" errors to 404', async () => {
+  it('reports a missing object as 404 with its code', async () => {
     const { stdout } = await runHandleError('error_not_found');
     expect(JSON.parse(stdout)).toEqual({
-      error: { name: 'omnifocus_error', detail: 'Task not found', statusCode: 404 },
+      error: {
+        name: 'omnifocus_error',
+        detail: 'Task not found: foo',
+        statusCode: 404,
+        code: 'not_found',
+      },
     });
   });
 
-  it('maps "Multiple" errors to 400', async () => {
+  it('reports an ambiguous reference as 400 with its code', async () => {
     const { stdout } = await runHandleError('error_multiple');
     expect(JSON.parse(stdout)).toEqual({
       error: {
         name: 'omnifocus_error',
-        detail: 'Multiple matches for "foo"',
+        detail: 'Multiple Project matches: foo. Use an ID.',
         statusCode: 400,
+        code: 'ambiguous',
       },
+    });
+  });
+
+  it('takes no status from message text', async () => {
+    const { stdout } = await runHandleError('error_text_only');
+    expect(JSON.parse(stdout)).toEqual({
+      error: { name: 'omnifocus_error', detail: 'Task not found', statusCode: 500 },
     });
   });
 

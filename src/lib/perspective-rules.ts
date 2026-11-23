@@ -62,12 +62,6 @@ export const perspectiveRulesSchema = z.intersection(
 
 export type PerspectiveRulesDefinition = z.infer<typeof perspectiveRulesSchema>;
 
-export interface PerspectiveRulesResult {
-  id: string;
-  name: string;
-  definition: PerspectiveRulesDefinition;
-}
-
 export function parsePerspectiveRules(input: unknown): PerspectiveRulesDefinition {
   const result = perspectiveRulesSchema.safeParse(input);
   if (!result.success) {
@@ -75,39 +69,3 @@ export function parsePerspectiveRules(input: unknown): PerspectiveRulesDefinitio
   }
   return result.data;
 }
-
-export const PERSPECTIVE_RULES_HELPERS = `
-  function findCustomPerspective(idOrName) {
-    const byId = Perspective.Custom.byIdentifier(idOrName);
-    if (byId) return byId;
-    const matches = Perspective.Custom.all.filter(p => p.name === idOrName);
-    if (matches.length > 1) throw new Error('Multiple perspectives named: ' + idOrName + '. Use an identifier.');
-    if (matches.length === 1) return matches[0];
-    const builtInNames = ['inbox', 'flagged', 'forecast', 'projects', 'tags', 'nearby', 'review', 'search', 'completed', 'changed'];
-    if (builtInNames.includes(idOrName.toLowerCase()) ||
-        Perspective.BuiltIn.all.some(p => p.name === idOrName)) {
-      throw new Error('Built-in perspective has no editable rules: ' + idOrName);
-    }
-    throw new Error('Perspective not found: ' + idOrName);
-  }
-
-  function readPerspectiveRules(perspective) {
-    const definition = {
-      archivedFilterRules: perspective.archivedFilterRules,
-      archivedTopLevelFilterAggregation: perspective.archivedTopLevelFilterAggregation
-    };
-    if (!Array.isArray(definition.archivedFilterRules) ||
-        ![null, 'all', 'any', 'none'].includes(definition.archivedTopLevelFilterAggregation)) {
-      throw new Error('OmniFocus returned an unsupported perspective rules archive');
-    }
-    return JSON.parse(JSON.stringify(definition));
-  }
-
-  function canonicalRules(value) {
-    if (Array.isArray(value)) return '[' + value.map(canonicalRules).join(',') + ']';
-    if (value !== null && typeof value === 'object') {
-      return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonicalRules(value[key])).join(',') + '}';
-    }
-    return JSON.stringify(value);
-  }
-`;

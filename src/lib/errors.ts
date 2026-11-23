@@ -11,11 +11,39 @@ export class OmniFocusCliError extends Error {
   }
 }
 
-export function errorResponse(error: unknown) {
-  let name = 'unknown_error';
-  let detail = 'An unknown error occurred';
-  let statusCode = 500;
+const STATUS_CODES = {
+  not_found: 404,
+  ambiguous: 400,
+  invalid: 400,
+  verification_failed: 500,
+  partial_write: 500,
+  script_error: 500,
+  bridge_error: 502,
+  timeout: 504,
+} as const;
 
+export type OmniFocusErrorCode = keyof typeof STATUS_CODES;
+
+export function isOmniFocusErrorCode(value: unknown): value is OmniFocusErrorCode {
+  return typeof value === 'string' && Object.hasOwn(STATUS_CODES, value);
+}
+
+/** A failure reported by OmniFocus or by the bridge that reaches it. */
+export class OmniFocusError extends Error {
+  readonly statusCode: number;
+
+  constructor(
+    readonly code: OmniFocusErrorCode,
+    message: string,
+    options?: ErrorOptions
+  ) {
+    super(message, options);
+    this.name = 'OmniFocusError';
+    this.statusCode = STATUS_CODES[code];
+  }
+}
+
+export function errorResponse(error: unknown) {
   if (error instanceof AutomationPermissionError) {
     return {
       error: {
@@ -26,22 +54,26 @@ export function errorResponse(error: unknown) {
         execPath: error.execPath,
       },
     };
-  } else if (error instanceof OmniFocusCliError) {
-    name = 'cli_error';
-    detail = error.message;
-    statusCode = error.statusCode;
-  } else if (error instanceof Error) {
-    name = 'omnifocus_error';
-    detail = error.message;
-
-    if (detail.includes('not found')) {
-      statusCode = 404;
-    } else if (detail.includes('Multiple')) {
-      statusCode = 400;
-    }
   }
-
-  return { error: { name, detail, statusCode } };
+  if (error instanceof OmniFocusError) {
+    return {
+      error: {
+        name: 'omnifocus_error',
+        detail: error.message,
+        statusCode: error.statusCode,
+        code: error.code,
+      },
+    };
+  }
+  if (error instanceof OmniFocusCliError) {
+    return { error: { name: 'cli_error', detail: error.message, statusCode: error.statusCode } };
+  }
+  if (error instanceof Error) {
+    return { error: { name: 'omnifocus_error', detail: error.message, statusCode: 500 } };
+  }
+  return {
+    error: { name: 'unknown_error', detail: 'An unknown error occurred', statusCode: 500 },
+  };
 }
 
 export function handleError(error: unknown): void {

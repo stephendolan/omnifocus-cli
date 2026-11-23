@@ -1,59 +1,16 @@
-import { describe, expect, it, mock, spyOn } from 'bun:test';
-import { runInNewContext } from 'node:vm';
+import { describe, expect, it, spyOn } from 'bun:test';
 import { OmniFocus } from '../omnifocus.js';
 import { createFolderCommand } from '../../commands/folder.js';
+import { fakeOmniFocus } from './fixtures/fake-omnifocus.js';
 
-function folderDatabase() {
-  const folders: MockFolder[] = [];
-  const ending = {};
-
-  class MockFolder {
-    static Status = { Active: 'active', Dropped: 'dropped' };
-    id: { primaryKey: string };
-    status = 'active';
-    effectiveActive = true;
-    parent: MockFolder | null = null;
-    folders: MockFolder[] = [];
-    projects: { effectiveActive: boolean }[] = [];
-
-    constructor(
-      public name: string,
-      position: object
-    ) {
-      if (position !== ending) throw new Error('Expected top-level library insertion');
-      this.id = { primaryKey: `folder-${folders.length + 1}` };
-      folders.push(this);
-    }
-  }
-
-  const of = new OmniFocus();
-  const execute = mock(async (script: string) =>
-    runInNewContext(script, {
-      ObjC: { import() {}, bindFunction() {} },
-      $: {
-        NSAppleEventDescriptor: { descriptorWithBundleIdentifier: () => ({ aeDesc: {} }) },
-        AEDeterminePermissionToAutomateTarget: () => 0,
-      },
-      Application: () => ({
-        evaluateJavascript: (omniScript: string) =>
-          runInNewContext(omniScript, {
-            Folder: MockFolder,
-            folders,
-            flattenedFolders: folders,
-            library: { ending },
-          }),
-      }),
-    })
-  );
-  of['executeJXA'] = execute;
-  return { of, folders, MockFolder, ending, execute };
-}
+const idOf = (object: { id: { primaryKey: string } }) => object.id.primaryKey;
 
 describe('folder creation', () => {
   it('creates once and returns the same folder on a repeat call', async () => {
-    const { of, folders } = folderDatabase();
-    expect(await of.createFolder('Work')).toEqual({
-      id: 'folder-1',
+    const { of, context } = fakeOmniFocus();
+    const created = await of.createFolder('Work');
+    expect(created).toEqual({
+      id: created.id,
       name: 'Work',
       status: 'active',
       effectivelyActive: true,
@@ -65,65 +22,61 @@ describe('folder creation', () => {
       alreadyExisted: false,
     });
     expect(await of.createFolder('Work')).toMatchObject({
-      id: 'folder-1',
+      id: created.id,
       name: 'Work',
       alreadyExisted: true,
     });
-    expect(folders.map((folder) => folder.name)).toEqual(['Work']);
-    expect(await of.listFolders()).toMatchObject([{ id: 'folder-1', name: 'Work' }]);
+    expect(context.folders.map((folder) => folder.name)).toEqual(['Work']);
+    expect(await of.listFolders()).toMatchObject([{ id: created.id, name: 'Work' }]);
   });
 
   it('reuses a dropped top-level folder without changing its status', async () => {
-    const { of, folders, MockFolder, ending } = folderDatabase();
-    const existing = new MockFolder('Work', ending);
-    existing.status = 'dropped';
-    existing.effectiveActive = false;
+    const { of, Folder, context } = fakeOmniFocus();
+    const existing = new Folder('Work');
+    existing.status = Folder.Status.Dropped;
     expect(await of.createFolder('Work')).toMatchObject({
-      id: 'folder-1',
+      id: idOf(existing),
       name: 'Work',
       status: 'dropped',
       effectivelyActive: false,
       alreadyExisted: true,
     });
-    expect(folders.length).toBe(1);
+    expect(context.folders.length).toBe(1);
   });
 
   it('matches exact top-level names and ignores nested names', async () => {
-    const { of, folders, MockFolder, ending } = folderDatabase();
-    const parent = new MockFolder('Parent', ending);
-    const nested = new MockFolder('Work', ending);
-    folders.pop();
-    nested.parent = parent;
-    parent.folders.push(nested);
-    new MockFolder('work', ending);
+    const { of, Folder, context } = fakeOmniFocus();
+    const parent = new Folder('Parent');
+    new Folder('Work', parent);
+    new Folder('work');
     expect(await of.createFolder('Work')).toMatchObject({
-      id: 'folder-3',
       name: 'Work',
       parent: null,
       alreadyExisted: false,
     });
-    expect(folders.map((folder) => folder.name)).toEqual(['Parent', 'work', 'Work']);
+    expect(context.folders.map((folder) => folder.name)).toEqual(['Parent', 'work', 'Work']);
   });
 
   it('round trips quotes, backslashes, and control characters without executing the name', async () => {
-    const { of, folders } = folderDatabase();
-    const name = 'Work "quoted" \\ path\n\r\t"); throw new Error("injected"); //';
+    const { of, context } = fakeOmniFocus();
+    const name = 'Work "quoted" \\ path\n\r\t"); throw new Error("injected"); //   ${1}`';
     expect(await of.createFolder(name)).toMatchObject({ name, alreadyExisted: false });
     expect(await of.createFolder(name)).toMatchObject({ name, alreadyExisted: true });
-    expect(folders.length).toBe(1);
+    expect(context.folders.length).toBe(1);
   });
 
   it('propagates bridge failures to the caller', async () => {
-    const { of, execute } = folderDatabase();
+    const { of, execute } = fakeOmniFocus();
     execute.mockRejectedValue(new Error('Automation failed'));
     await expect(of.createFolder('Work')).rejects.toThrow('Automation failed');
   });
 
   it('still rejects a missing folder when creating a project', async () => {
-    const { of } = folderDatabase();
+    const { of, context } = fakeOmniFocus();
     await expect(of.createProject({ name: 'Project', folder: 'Missing' })).rejects.toThrow(
       'Folder not found: Missing'
     );
+    expect(context.flattenedProjects).toEqual([]);
   });
 
   it('registers the CLI command and prints the creation result as JSON', async () => {
@@ -149,5 +102,62 @@ describe('folder creation', () => {
       create.mockRestore();
       output.mockRestore();
     }
+  });
+});
+
+describe('folder reads and deletion', () => {
+  it('counts the projects in a folder that are neither dropped nor done', async () => {
+    const { of, Folder, Project } = fakeOmniFocus();
+    const folder = new Folder('Area');
+    new Project('Active', folder);
+    new Project('Held', folder).status = Project.Status.OnHold;
+    new Project('Finished', folder).status = Project.Status.Done;
+    new Project('Abandoned', folder).status = Project.Status.Dropped;
+    expect(await of.getFolder('Area')).toMatchObject({
+      projectCount: 4,
+      remainingProjectCount: 2,
+    });
+    folder.status = Folder.Status.Dropped;
+    expect(await of.getFolder('Area')).toMatchObject({
+      status: 'dropped',
+      effectivelyActive: false,
+      projectCount: 4,
+      remainingProjectCount: 0,
+    });
+  });
+
+  it('nests child folders and hides dropped ones unless asked', async () => {
+    const { of, Folder } = fakeOmniFocus();
+    const parent = new Folder('Parent');
+    new Folder('Kept', parent);
+    new Folder('Gone', parent).status = Folder.Status.Dropped;
+    new Folder('Retired').status = Folder.Status.Dropped;
+    const listed = await of.listFolders();
+    expect(listed.map((folder) => folder.name)).toEqual(['Parent']);
+    expect(listed[0]).toMatchObject({ folderCount: 2 });
+    expect(listed[0].children.map((child) => child.name)).toEqual(['Kept']);
+    expect(listed[0].children[0].parent).toBe('Parent');
+    const all = await of.listFolders({ includeDropped: true });
+    expect(all.map((folder) => folder.name)).toEqual(['Parent', 'Retired']);
+    expect(all[0].children.map((child) => child.name)).toEqual(['Kept', 'Gone']);
+    expect(
+      (await of.getFolder(parent.id.primaryKey, { includeDropped: true })).children.length
+    ).toBe(2);
+    await expect(of.getFolder('Missing')).rejects.toThrow('Folder not found: Missing');
+  });
+
+  it('deletes only an empty folder', async () => {
+    const { of, Folder, Project, context } = fakeOmniFocus();
+    const full = new Folder('Full');
+    new Project('Inside', full);
+    new Folder('Empty');
+    await expect(of.deleteFolder('Full')).rejects.toMatchObject({
+      code: 'invalid',
+      statusCode: 400,
+      message: 'Folder must be empty to delete',
+    });
+    await of.deleteFolder('Empty');
+    expect(context.folders.map((folder) => folder.name)).toEqual(['Full']);
+    await expect(of.deleteFolder('Empty')).rejects.toMatchObject({ code: 'not_found' });
   });
 });

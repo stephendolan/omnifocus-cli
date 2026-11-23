@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Stands in for /usr/bin/osascript. It runs the JXA it receives on stdin in a
+// vm, never sends an Apple event, and reaches a database only when
+// OF_TEST_OMNI_CONTEXT names a module that exports fake Omni Automation globals.
 const { runInNewContext } = require('node:vm');
 
 let script = '';
@@ -7,6 +10,7 @@ process.stdin.on('data', (chunk) => { script += chunk; });
 process.stdin.on('end', () => {
   try {
     const status = Number(process.env.OF_TEST_PERMISSION_STATUS || 0);
+    const contextPath = process.env.OF_TEST_OMNI_CONTEXT;
     const result = runInNewContext(script, {
       ObjC: {
         import() {},
@@ -22,7 +26,11 @@ process.stdin.on('end', () => {
         AEDeterminePermissionToAutomateTarget: () => status,
         NSThread: { sleepForTimeInterval: (seconds) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, seconds * 1000) },
       },
-      Application: () => { throw new Error('Mock forbids live OmniFocus events'); },
+      Application: () => {
+        if (!contextPath) throw new Error('Mock forbids live OmniFocus events');
+        const { context } = require(contextPath);
+        return { evaluateJavascript: (omniScript) => runInNewContext(omniScript, context) };
+      },
     });
     process.stdout.write(String(result) + '\n');
   } catch (error) {
