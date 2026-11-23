@@ -45,5 +45,15 @@ export function createFolderCommand(): Command {
       })
     );
 
+  command
+    .command('delete <idOrName>')
+    .description('Delete an empty folder')
+    .action(
+      withErrorHandling(async (idOrName) => {
+        await new OmniFocus().deleteFolder(idOrName);
+        outputJson({ deleted: true });
+      })
+    );
+
   return command;
 }

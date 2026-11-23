@@ -28,6 +28,7 @@ const excluded = [
   'update_perspective_rules',
   'delete_tag',
   'create_folder',
+  'delete_folder',
   'get_perspective_tasks',
 ];
 
@@ -41,7 +42,7 @@ describe('capability modes', () => {
     const client = await connect();
     clients.push(client);
     const tools = (await client.listTools()).tools.map((tool) => tool.name);
-    expect(tools.length).toBe(29);
+    expect(tools.length).toBe(30);
     expect(tools).toEqual(expect.arrayContaining(excluded));
     expect(client.getServerVersion()).toMatchObject({
       name: 'omnifocus',

@@ -286,3 +286,46 @@ bun link        # Link globally as `of`
 ## License
 
 MIT
+
+### Structural updates
+
+All MCP argument envelopes reject unknown fields. Updates require at least one
+supported change. Validation and reference resolution precede writes; supported
+idempotent updates succeed. Write readback mismatches return errors. Reversible
+updates attempt verified restoration; lifecycle failures can report a partial
+outcome. Read state before retrying after a transport failure.
+
+`update_project.folder` accepts a folder ID or unique exact name; `null` or `""`
+moves to the library root. `update_tag.parent` accepts a tag ID, unique name or
+path; `null` moves to the tag root. `parentId` is an alias; conflicting parents
+and tag cycles fail. `update_task.project` accepts a project ID or unique name;
+`null` or `""` moves to the inbox. Omitted placement fields preserve location.
+
+Project create/update accepts `type`: `parallel`, `sequential`, or `single-action`.
+`singleActionList` is a boolean alias. Existing `sequential` remains available;
+contradictory arguments fail. Converting a single-action list to sequential
+requires explicit `type: "sequential"` or `singleActionList: false`. Project
+responses include `type`, `singleActionList`, and `folderId`; task responses add
+`projectId` and `parentTaskId`, and tag responses add `parentId`.
+
+Project status includes `done`, distinct from `dropped`. Project updates also
+accept `completed: true` (done) or `false` (active). Explicit status filters include
+matching projects regardless of default inactive exclusions. Existing project
+statistics retain their historical `parallelProjects` count, which includes
+single-action lists with `sequential: false`.
+
+`update_task.before` and `after` accept exact sibling task IDs and preserve task
+identity and descendants. Supply only one; ordering cannot combine with project,
+completed, or dropped changes. Anchors must share the immediate container.
+Project-scoped `list_tasks` accepts a project ID or unique name and returns native
+outline order with filters preserving relative order.
+
+CLI equivalents include `project create/update --type`, `--single-action-list`,
+`project update --folder ""`, `tag update --parent`, and `task update --before` or
+`--after`. Empty tag parent clears to root. `folder delete` and MCP `delete_folder`
+only delete empty folders and require full mode. Custom perspectives retain their
+existing `id` field and add stable `identifier`; `get_perspective_tasks.name` also
+accepts that identifier and switches the front window.
+
+Repeating-task completion through `update_task` is rejected before any write: its
+occurrence-creation semantics require a separate occurrence-aware contract.

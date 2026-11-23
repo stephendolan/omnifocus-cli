@@ -1,3 +1,13 @@
+import { OMNI_MUTATIONS } from './omni-mutations.js';
+import {
+  parseMutation,
+  taskCreate,
+  taskUpdate,
+  projectCreate,
+  projectMutation,
+  tagCreate,
+  tagUpdate,
+} from './mutations.js';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { AutomationPermissionError, consentPreflight, OMNIFOCUS_BUNDLE_ID } from './consent.js';
@@ -36,9 +46,11 @@ export class OmniFocus {
     active: 'Active',
     'on hold': 'OnHold',
     dropped: 'Dropped',
+    done: 'Done',
   } as const;
 
   private readonly OMNI_HELPERS = `
+    ${OMNI_MUTATIONS}
     function serializeTask(task) {
       const containingProject = task.containingProject;
       const tagNames = task.tags.map(t => t.name);
@@ -52,6 +64,8 @@ export class OmniFocus {
         effectivelyActive: task.effectiveActive,
         flagged: task.flagged,
         project: containingProject ? containingProject.name : null,
+        projectId: containingProject ? containingProject.id.primaryKey : null,
+        parentTaskId: task.parent && (!containingProject || task.parent !== containingProject.task) ? task.parent.id.primaryKey : null,
         tags: tagNames,
         defer: task.deferDate ? task.deferDate.toISOString() : null,
         due: task.dueDate ? task.dueDate.toISOString() : null,
@@ -76,6 +90,9 @@ export class OmniFocus {
         status: projectStatusToString(project.status),
         folder: parentFolder ? parentFolder.name : null,
         sequential: project.sequential,
+        type: projectType(project),
+        singleActionList: !!project.containsSingletonActions,
+        folderId: parentFolder ? parentFolder.id.primaryKey : null,
         taskCount: allTasks.length,
         remainingCount: remainingTasks.length,
         tags: tagNames
@@ -118,11 +135,12 @@ export class OmniFocus {
       }
 
       if (idOrName.includes('/')) {
-        for (const tag of flattenedTags) {
-          if (getTagPath(tag) === idOrName) {
-            return tag;
-          }
-        }
+        const matches = flattenedTags.filter(tag => getTagPath(tag) === idOrName);
+        if (matches.length > 1) throw new Error("Multiple tags found at path: " + idOrName);
+        if (matches.length === 1) return matches[0];
+        const literal = flattenedTags.filter(tag => tag.name === idOrName);
+        if (literal.length > 1) throw new Error("Multiple tags found: " + idOrName);
+        if (literal.length === 1) return literal[0];
         throw new Error("Tag not found: " + idOrName);
       }
 
@@ -158,8 +176,9 @@ export class OmniFocus {
     }
 
     function replaceTagsOn(target, tagNames) {
+      const resolved = tagNames.map(findTag);
       target.clearTags();
-      assignTags(target, tagNames);
+      resolved.forEach(tag => target.addTag(tag));
     }
 
     function statusToString(status, StatusEnum) {
@@ -173,7 +192,8 @@ export class OmniFocus {
     function stringToStatus(str, StatusEnum) {
       if (str === 'active') return StatusEnum.Active;
       if (str === 'on hold') return StatusEnum.OnHold;
-      return StatusEnum.Dropped;
+      if (str === 'dropped') return StatusEnum.Dropped;
+      throw new Error('Invalid status: ' + str);
     }
 
     const projectStatusToString = (status) => statusToString(status, Project.Status);
@@ -182,7 +202,10 @@ export class OmniFocus {
       if (status === Folder.Status.Active) return 'active';
       return 'dropped';
     };
-    const stringToProjectStatus = (str) => stringToStatus(str, Project.Status);
+    const stringToProjectStatus = (str) => {
+      if (str === 'done') return Project.Status.Done;
+      return stringToStatus(str, Project.Status);
+    };
     const stringToTagStatus = (str) => stringToStatus(str, Tag.Status);
 
     function serializeFolder(folder, includeDropped = false) {
@@ -246,6 +269,7 @@ export class OmniFocus {
         active: tag.active,
         status: tagStatusToString(tag.status),
         parent: tag.parent ? tag.parent.name : null,
+        parentId: tag.parent ? tag.parent.id.primaryKey : null,
         children: tag.children.map(c => c.name),
         allowsNextAction: tag.allowsNextAction
       };
@@ -325,7 +349,7 @@ export class OmniFocus {
     }
     if (filters.project) {
       conditions.push(`
-        if (!task.containingProject || task.containingProject.name !== "${this.escapeString(filters.project)}") {
+        if (!task.containingProject || task.containingProject !== resolveProject("${this.escapeString(filters.project)}")) {
           continue;
         }
       `);
@@ -344,7 +368,7 @@ export class OmniFocus {
   private buildProjectFilters(filters: ProjectFilters): string {
     const conditions: string[] = [];
 
-    if (!filters.includeDropped) {
+    if (!filters.includeDropped && !filters.status) {
       conditions.push(
         'if (project.status === Project.Status.Dropped || project.status === Project.Status.Done) continue;'
       );
@@ -365,110 +389,12 @@ export class OmniFocus {
     return conditions.join('\n    ');
   }
 
-  private buildTaskUpdates(options: UpdateTaskOptions): string {
-    const updates: string[] = [];
-
-    if (options.name !== undefined) {
-      updates.push(`task.name = "${this.escapeString(options.name)}";`);
-    }
-    if (options.note !== undefined) {
-      updates.push(`task.note = "${this.escapeString(options.note)}";`);
-    }
-    if (options.flagged !== undefined) {
-      updates.push(`task.flagged = ${options.flagged};`);
-    }
-    if (options.completed !== undefined) {
-      updates.push(options.completed ? 'task.markComplete();' : 'task.markIncomplete();');
-    }
-    if (options.dropped !== undefined) {
-      updates.push(
-        options.dropped ? 'task.drop(false, null);' : 'if (task.dropDate) task.active = true;'
-      );
-    }
-    if (options.estimatedMinutes !== undefined) {
-      updates.push(`task.estimatedMinutes = ${options.estimatedMinutes};`);
-    }
-    if (options.defer !== undefined) {
-      updates.push(
-        options.defer
-          ? `task.deferDate = new Date(${JSON.stringify(options.defer)});`
-          : 'task.deferDate = null;'
-      );
-    }
-    if (options.due !== undefined) {
-      updates.push(
-        options.due
-          ? `task.dueDate = new Date(${JSON.stringify(options.due)});`
-          : 'task.dueDate = null;'
-      );
-    }
-    if (options.planned !== undefined) {
-      updates.push(
-        options.planned
-          ? `task.plannedDate = new Date(${JSON.stringify(options.planned)});`
-          : 'task.plannedDate = null;'
-      );
-    }
-    if (options.project !== undefined && options.project) {
-      updates.push(`
-        const targetProject = findByName(flattenedProjects, "${this.escapeString(options.project)}", "Project");
-        moveTasks([task], targetProject);
-      `);
-    }
-    if (options.tags !== undefined) {
-      updates.push(`replaceTagsOn(task, ${JSON.stringify(options.tags)});`);
-    }
-
-    return updates.join('\n    ');
-  }
-
-  private buildTagUpdates(options: UpdateTagOptions): string {
-    const updates: string[] = [];
-
-    if (options.name !== undefined) {
-      updates.push(`tag.name = "${this.escapeString(options.name)}";`);
-    }
-    if (options.status !== undefined) {
-      updates.push(`tag.status = stringToTagStatus("${options.status}");`);
-    }
-
-    return updates.join('\n    ');
-  }
-
-  private buildProjectUpdates(options: UpdateProjectOptions): string {
-    const updates: string[] = [];
-
-    if (options.name !== undefined) {
-      updates.push(`project.name = "${this.escapeString(options.name)}";`);
-    }
-    if (options.note !== undefined) {
-      updates.push(`project.note = "${this.escapeString(options.note)}";`);
-    }
-    if (options.sequential !== undefined) {
-      updates.push(`project.sequential = ${options.sequential};`);
-    }
-    if (options.status !== undefined) {
-      updates.push(`project.status = stringToProjectStatus("${options.status}");`);
-    }
-    if (options.folder !== undefined && options.folder) {
-      updates.push(`
-        const targetFolder = findByName(flattenedFolders, "${this.escapeString(options.folder)}", "Folder");
-        moveProjects([project], targetFolder);
-      `);
-    }
-    if (options.tags !== undefined) {
-      updates.push(`replaceTagsOn(project, ${JSON.stringify(options.tags)});`);
-    }
-
-    return updates.join('\n    ');
-  }
-
   async listTasks(filters: TaskFilters = {}): Promise<Task[]> {
     const omniScript = `
       ${this.OMNI_HELPERS}
       (() => {
         const results = [];
-        for (const task of flattenedTasks) {
+        for (const task of ${filters.project ? `resolveProject(${JSON.stringify(filters.project)}).flattenedTasks` : 'flattenedTasks'}) {
           ${this.buildTaskFilters(filters)}
           results.push(serializeTask(task));
         }
@@ -481,23 +407,24 @@ export class OmniFocus {
   }
 
   async createTask(options: CreateTaskOptions): Promise<Task> {
+    options = parseMutation(taskCreate, options, false);
     const omniScript = `
       ${this.OMNI_HELPERS}
       (() => {
+        ${JSON.stringify(options.tags || [])}.map(findTag);
         ${
           options.project
-            ? `const targetProject = findByName(flattenedProjects, "${this.escapeString(options.project)}", "Project");
+            ? `const targetProject = resolveProject("${this.escapeString(options.project)}");
              const task = new Task("${this.escapeString(options.name)}", targetProject);`
             : `const task = new Task("${this.escapeString(options.name)}");`
         }
 
-        ${options.note ? `task.note = "${this.escapeString(options.note)}";` : ''}
-        ${options.flagged ? 'task.flagged = true;' : ''}
-        ${options.estimatedMinutes ? `task.estimatedMinutes = ${options.estimatedMinutes};` : ''}
-        ${options.defer ? `task.deferDate = new Date(${JSON.stringify(options.defer)});` : ''}
-        ${options.due ? `task.dueDate = new Date(${JSON.stringify(options.due)});` : ''}
-        ${options.planned ? `task.plannedDate = new Date(${JSON.stringify(options.planned)});` : ''}
-        ${options.tags && options.tags.length > 0 ? `assignTags(task, ${JSON.stringify(options.tags)});` : ''}
+        try { mutate("task", task, ${JSON.stringify(options)}); }
+        catch (error) {
+          try { const createdId = task.id.primaryKey; deleteObject(task); if (flattenedTasks.some(t => t.id.primaryKey === createdId)) throw new Error('Created task still exists'); }
+          catch (cleanupError) { throw new Error(error.message + '; created task cleanup failed: ' + cleanupError.message); }
+          throw error;
+        }
 
         return JSON.stringify(serializeTask(task));
       })();
@@ -508,11 +435,12 @@ export class OmniFocus {
   }
 
   async updateTask(idOrName: string, options: UpdateTaskOptions): Promise<Task> {
+    options = parseMutation(taskUpdate, options, true);
     const omniScript = `
       ${this.OMNI_HELPERS}
       (() => {
         const task = findTask("${this.escapeString(idOrName)}");
-        ${this.buildTaskUpdates(options)}
+        mutate("task", task, ${JSON.stringify(options)});
         return JSON.stringify(serializeTask(task));
       })();
     `;
@@ -550,20 +478,24 @@ export class OmniFocus {
   }
 
   async createProject(options: CreateProjectOptions): Promise<Project> {
+    options = parseMutation(projectCreate, options, false);
     const omniScript = `
       ${this.OMNI_HELPERS}
       (() => {
+        ${JSON.stringify(options.tags || [])}.map(findTag);
         ${
           options.folder
-            ? `const targetFolder = findByName(flattenedFolders, "${this.escapeString(options.folder)}", "Folder");
+            ? `const targetFolder = resolveFolder("${this.escapeString(options.folder)}");
              const project = new Project("${this.escapeString(options.name)}", targetFolder);`
             : `const project = new Project("${this.escapeString(options.name)}");`
         }
 
-        ${options.note ? `project.note = "${this.escapeString(options.note)}";` : ''}
-        ${options.sequential !== undefined ? `project.sequential = ${options.sequential};` : ''}
-        ${options.status ? `project.status = stringToProjectStatus("${options.status}");` : ''}
-        ${options.tags && options.tags.length > 0 ? `assignTags(project, ${JSON.stringify(options.tags)});` : ''}
+        try { mutate("project", project, ${JSON.stringify(options)}); }
+        catch (error) {
+          try { const createdId = project.id.primaryKey; deleteObject(project); if (flattenedProjects.some(p => p.id.primaryKey === createdId)) throw new Error('Created project still exists'); }
+          catch (cleanupError) { throw new Error(error.message + '; created project cleanup failed: ' + cleanupError.message); }
+          throw error;
+        }
 
         return JSON.stringify(serializeProject(project));
       })();
@@ -574,11 +506,12 @@ export class OmniFocus {
   }
 
   async updateProject(idOrName: string, options: UpdateProjectOptions): Promise<Project> {
+    options = parseMutation(projectMutation, options, true);
     const omniScript = `
       ${this.OMNI_HELPERS}
       (() => {
         const project = findProject("${this.escapeString(idOrName)}");
-        ${this.buildProjectUpdates(options)}
+        mutate("project", project, ${JSON.stringify(options)});
         return JSON.stringify(serializeProject(project));
       })();
     `;
@@ -684,7 +617,7 @@ export class OmniFocus {
 
         const customPerspectives = Perspective.Custom.all;
         for (const perspective of customPerspectives) {
-          results.push({ id: perspective.name, name: perspective.name });
+          results.push({ id: perspective.name, name: perspective.name, identifier: perspective.identifier });
         }
 
         return JSON.stringify(results);
@@ -793,7 +726,7 @@ export class OmniFocus {
         if (builtInPerspectives[lowerName]) {
           win.perspective = builtInPerspectives[lowerName];
         } else {
-          const customPerspective = Perspective.Custom.byName(perspectiveName);
+          const customPerspective = Perspective.Custom.byIdentifier(perspectiveName) || Perspective.Custom.byName(perspectiveName);
           if (customPerspective) {
             win.perspective = customPerspective;
           } else {
@@ -921,6 +854,7 @@ export class OmniFocus {
   }
 
   async createTag(options: CreateTagOptions): Promise<Tag> {
+    options = parseMutation(tagCreate, options, false);
     const omniScript = `
       ${this.OMNI_HELPERS}
       (() => {
@@ -931,7 +865,12 @@ export class OmniFocus {
             : `const tag = new Tag("${this.escapeString(options.name)}", tags.beginning);`
         }
 
-        ${options.status ? `tag.status = stringToTagStatus("${options.status}");` : ''}
+        try { mutate("tag", tag, ${JSON.stringify(options)}); }
+        catch (error) {
+          try { const createdId = tag.id.primaryKey; deleteObject(tag); if (flattenedTags.some(t => t.id.primaryKey === createdId)) throw new Error('Created tag still exists'); }
+          catch (cleanupError) { throw new Error(error.message + '; created tag cleanup failed: ' + cleanupError.message); }
+          throw error;
+        }
 
         return JSON.stringify(serializeTag(tag));
       })();
@@ -955,11 +894,12 @@ export class OmniFocus {
   }
 
   async updateTag(idOrName: string, options: UpdateTagOptions): Promise<Tag> {
+    options = parseMutation(tagUpdate, options, true);
     const omniScript = `
       ${this.OMNI_HELPERS}
       (() => {
         const tag = findTag("${this.escapeString(idOrName)}");
-        ${this.buildTagUpdates(options)}
+        mutate("tag", tag, ${JSON.stringify(options)});
         return JSON.stringify(serializeTag(tag));
       })();
     `;
@@ -1130,6 +1070,17 @@ export class OmniFocus {
 
     const output = await this.executeJXA(this.wrapOmniScript(omniScript));
     return JSON.parse(output);
+  }
+
+  async deleteFolder(idOrName: string): Promise<void> {
+    await this.executeJXA(
+      this.wrapOmniScript(`
+      ${this.OMNI_HELPERS}
+      const folder = resolveFolder(${JSON.stringify(idOrName)});
+      if (folder.projects.length || folder.folders.length) throw new Error('Folder must be empty to delete');
+      deleteObject(folder);
+    `)
+    );
   }
 
   async listFolders(filters: FolderFilters = {}): Promise<Folder[]> {

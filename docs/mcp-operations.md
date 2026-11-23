@@ -54,8 +54,8 @@ public listener must continue rejecting requests without credentials.
 
 ## Capability and authentication boundaries
 
-Full mode is the default (29 tools). `--mode read-only` registers 17 tools and
-excludes all eleven create/update/delete tools and `get_perspective_tasks`, which
+Full mode is the default (30 tools). `--mode read-only` registers 17 tools and
+excludes all twelve create/update/delete tools and `get_perspective_tasks`, which
 changes the user's front window. The same allowlist filters `search_tools`.
 Excluded tools are unregistered and direct calls fail. A listener owns its mode;
 caller claims do not select a mode. Issue a credential for a separate read-only
@@ -132,7 +132,7 @@ launchctl kickstart -k gui/$(id -u)/com.example.omnifocus-mcp
 ```
 
 Verify changed PIDs and launch times, then initialize each localhost endpoint and
-check version `2.11.0`, `serverInfo.icons`, and its tool list. Full mode has 29 tools; read-only has 17.
+check version `2.11.0`, `serverInfo.icons`, and its tool list. Full mode has 30 tools; read-only has 17.
 The public endpoint requires a real Access assertion even on localhost.
 
 `folder create <name>` and the full-mode `create_folder` tool return the folder

@@ -59,11 +59,13 @@ export function createTagCommand(): Command {
     .command('update <idOrName>')
     .description('Update an existing tag')
     .option('-n, --name <name>', 'Rename tag')
+    .option('--parent <id-or-path>', 'Move under a tag (empty means root)')
     .option('-s, --status <status>', 'Set status (active, on hold, dropped)')
     .action(
       withErrorHandling(async (idOrName, options) => {
         const of = new OmniFocus();
         const updates: UpdateTagOptions = {
+          ...(options.parent !== undefined && { parent: options.parent || null }),
           ...(options.name && { name: options.name }),
           ...(options.status && { status: options.status }),
         };
