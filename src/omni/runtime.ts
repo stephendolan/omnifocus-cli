@@ -93,12 +93,6 @@ export interface ReversibleWrite extends CheckedWrite {
   undone(): boolean;
 }
 
-export interface Taggable {
-  readonly tags: Tag[];
-  clearTags(): void;
-  addTag(tag: Tag, location: null): void;
-}
-
 // Entry point and errors
 
 /** Runs one operation and reports its value or failure as a JSON envelope. */
@@ -490,11 +484,19 @@ export function dateWrite(
   };
 }
 
-export function tagsWrite(target: Taggable, requested: Tag[]): ReversibleWrite {
+/**
+ * `addTag` is passed in because Task.addTag and Project.addTag declare
+ * different parameters, and each must be called as it is declared.
+ */
+export function tagsWrite(
+  target: { readonly tags: Tag[]; clearTags(): void },
+  addTag: (tag: Tag) => void,
+  requested: Tag[]
+): ReversibleWrite {
   const original = Array.from(target.tags);
   const replace = (next: Tag[]) => {
     target.clearTags();
-    for (const tag of next) target.addTag(tag, null);
+    for (const tag of next) addTag(tag);
   };
   return {
     field: 'tags',
@@ -653,7 +655,9 @@ export function applyTaskChanges(task: Task, changes: TaskChanges): void {
   }
   if (project !== undefined) writes.push(taskProjectWrite(task, project));
   if (anchor) writes.push(taskOrderWrite(task, anchor, changes.before !== undefined));
-  if (requestedTags) writes.push(tagsWrite(task, requestedTags));
+  if (requestedTags) {
+    writes.push(tagsWrite(task, (tag) => task.addTag(tag, null), requestedTags));
+  }
 
   const lifecycle: CheckedWrite[] = [];
   if (changes.completed !== undefined) {
@@ -792,7 +796,9 @@ export function applyProjectChanges(project: Project, changes: ProjectChanges): 
     writes.push(propertyWrite(project, 'status', projectStatusNamed(status), 'status'));
   }
   if (folder !== undefined) writes.push(projectFolderWrite(project, folder));
-  if (requestedTags) writes.push(tagsWrite(project, requestedTags));
+  if (requestedTags) {
+    writes.push(tagsWrite(project, (tag) => project.addTag(tag), requestedTags));
+  }
 
   commit(writes, []);
 }
@@ -885,11 +891,13 @@ export function createTask(args: TaskChanges & { name: string }) {
   const project = args.project ? resolveProject(args.project) : null;
   args.tags?.forEach(findTag);
   const task = new Task(args.name, project ?? inbox.ending);
+  // The project was resolved above; naming it by ID keeps it from being looked up by name again.
+  const changes = { ...args, project: project ? project.id.primaryKey : args.project };
   finishCreated(
     task,
     () => flattenedTasks,
     'task',
-    () => applyTaskChanges(task, args)
+    () => applyTaskChanges(task, changes)
   );
   return serializeTask(task);
 }
@@ -956,11 +964,12 @@ export function createProject(args: ProjectChanges & { name: string }) {
   const folder = args.folder ? resolveFolder(args.folder) : null;
   args.tags?.forEach(findTag);
   const project = new Project(args.name, folder ?? library.ending);
+  const changes = { ...args, folder: folder ? folder.id.primaryKey : args.folder };
   finishCreated(
     project,
     () => flattenedProjects,
     'project',
-    () => applyProjectChanges(project, args)
+    () => applyProjectChanges(project, changes)
   );
   return serializeProject(project);
 }
@@ -993,11 +1002,13 @@ export function getTag(args: { idOrName: string }) {
 export function createTag(args: TagChanges & { name: string }) {
   const parent = args.parent ? findTag(args.parent) : null;
   const tag = new Tag(args.name, parent ?? tags.beginning);
+  // By name, a parent called the same as the new tag would now be ambiguous.
+  const changes = { ...args, parent: parent ? parent.id.primaryKey : args.parent };
   finishCreated(
     tag,
     () => flattenedTags,
     'tag',
-    () => applyTagChanges(tag, args)
+    () => applyTagChanges(tag, changes)
   );
   return serializeTag(tag, false);
 }

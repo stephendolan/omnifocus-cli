@@ -60,6 +60,14 @@ describe('hierarchy mutations', () => {
     expect(namesOf(f.projects)).toEqual(['First', 'Second', 'Third']);
   });
 
+  it('creates a tag under a parent that has the same name', async () => {
+    const { of, Tag } = fakeOmniFocus();
+    const parent = new Tag('Home');
+    const child = await of.createTag({ name: 'Home', parent: 'Home' });
+    expect(child).toMatchObject({ name: 'Home', parentId: idOf(parent) });
+    expect(parent.children.map(idOf)).toEqual([child.id]);
+  });
+
   it('reparents tags while preserving identity and rejects cycles', async () => {
     const { of } = fakeOmniFocus();
     const parent = await of.createTag({ name: 'Parent' });
@@ -315,6 +323,41 @@ describe('write verification and restoration', () => {
       tags: ['Kept'],
     });
     expect(home.tasks.map(idOf)).toEqual([idOf(task), idOf(other)]);
+  });
+
+  it('puts a task back where it was after a move or reorder that really happened', async () => {
+    const { of, Project, Task } = fakeOmniFocus();
+    const home = new Project('Home');
+    const [first, second, last] = ['First', 'Second', 'Last'].map((name) => new Task(name, home));
+    const destination = new Project('Destination');
+    new Task('Resident', destination);
+    const refuseFlag = (task: InstanceType<typeof Task>) =>
+      Object.defineProperty(task, 'flagged', { get: () => false, set: () => {} });
+
+    // The move to another project succeeds, then a later check fails.
+    refuseFlag(last);
+    await expect(
+      of.updateTask(idOf(last), { project: idOf(destination), flagged: true })
+    ).rejects.toThrow('Write verification failed: flagged');
+    expect(namesOf(home.tasks)).toEqual(['First', 'Second', 'Last']);
+    expect(namesOf(destination.tasks)).toEqual(['Resident']);
+
+    refuseFlag(first);
+    await expect(of.updateTask(idOf(first), { project: null, flagged: true })).rejects.toThrow(
+      'Write verification failed: flagged'
+    );
+    expect(namesOf(home.tasks)).toEqual(['First', 'Second', 'Last']);
+
+    // The reorder succeeds, then a later check fails.
+    refuseFlag(second);
+    await expect(
+      of.updateTask(idOf(second), { before: idOf(first), flagged: true })
+    ).rejects.toThrow('Write verification failed: flagged');
+    expect(namesOf(home.tasks)).toEqual(['First', 'Second', 'Last']);
+    await expect(of.updateTask(idOf(first), { after: idOf(last), flagged: true })).rejects.toThrow(
+      'Write verification failed: flagged'
+    );
+    expect(namesOf(home.tasks)).toEqual(['First', 'Second', 'Last']);
   });
 
   it('reports a partial write when a value cannot be put back', async () => {

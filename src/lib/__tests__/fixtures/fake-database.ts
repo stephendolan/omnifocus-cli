@@ -286,8 +286,10 @@ export function fakeDatabase() {
     clearTags() {
       this.task.clearTags();
     }
-    addTag(tag: FakeTag) {
-      this.task.addTag(tag);
+    addTag(...args: [tag: FakeTag]) {
+      // Project.addTag declares one parameter; Task.addTag declares a second for location.
+      if (args.length !== 1) throw new Error('Project.addTag takes exactly one argument');
+      this.task.addTag(args[0]);
     }
     get parentFolder() {
       return this._folder;

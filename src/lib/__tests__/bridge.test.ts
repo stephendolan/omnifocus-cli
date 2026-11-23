@@ -25,7 +25,9 @@ describe('composeOmniScript', () => {
     const result = decodeOmniResult<typeof args>(runInNewContext(composeOmniScript(echo, args)));
     expect(result.text).toBe(args.text);
     expect(Object.keys(result.nested[0])).toEqual(['__proto__']);
-    expect(Object.getPrototypeOf(result.nested[0])).not.toBe('kept as a key');
+    expect(Object.getOwnPropertyDescriptor(result.nested[0], '__proto__')?.value).toBe(
+      'kept as a key'
+    );
   });
 
   it('runs an operation that takes no arguments', () => {
