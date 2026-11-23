@@ -101,7 +101,7 @@ function database() {
     parent = null;
     children: any[] = [];
     get containingProject() {
-      return this.assignedContainer === inbox ? null : this.assignedContainer;
+      return Array.isArray(this.assignedContainer) ? null : this.assignedContainer;
     }
     get before() {
       return { anchor: this, after: false };
@@ -277,6 +277,18 @@ describe('hierarchy mutations', () => {
     );
     expect(p.containsSingletonActions).toBe(true);
     expect(p.sequential).toBe(true);
+  });
+  it('moves an inbox task whose assigned container is a distinct inbox wrapper', async () => {
+    const { of, Project, Task, context } = database();
+    const p = new Project('Destination');
+    const task = new Task('Inbox task');
+    task.assignedContainer = new Proxy(context.inbox, {});
+    expect(await of.updateTask(task.id.primaryKey, { project: p.id.primaryKey })).toMatchObject({
+      projectId: p.id.primaryKey,
+    });
+    expect((await of.listTasks({ project: p.id.primaryKey })).map((t) => t.id)).toEqual([
+      task.id.primaryKey,
+    ]);
   });
   it('rejects repeating completion before changing fields or creating occurrences', async () => {
     const { of, Project, Task } = database();
