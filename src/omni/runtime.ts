@@ -537,11 +537,14 @@ export function propertyWrite<T extends object, K extends keyof T>(
 }
 
 /**
- * A note reduced to the text OmniFocus keeps. OmniFocus rewrites a note as it
- * stores it: CR and CRLF line endings and the Unicode line and paragraph
- * separators become line feeds, control characters and a byte order mark are
- * dropped, and whitespace at either end is trimmed. Two notes with the same
- * text here are the same note.
+ * A note reduced to its text, for comparing what was written with what
+ * OmniFocus stored. OmniFocus does not keep every note verbatim: live probing
+ * showed it changes CR and CRLF line endings, the Unicode line and paragraph
+ * separators, control characters, a byte order mark, and spaces and newlines
+ * at either end. What it stores instead could not be read back, so this
+ * treats every line-break form as a line feed, ignores control characters and
+ * byte order marks, and ignores whitespace at either end. A difference of any
+ * other kind, anywhere inside the text, still shows.
  *
  * Written with character codes rather than a pattern, so that no line
  * separator ever appears in this function's source text.
@@ -567,6 +570,10 @@ export function noteText(note: string): string {
 /**
  * Writes a note and checks that OmniFocus kept its text. An exact comparison
  * would fail every note that ends in a newline or uses CRLF line endings.
+ *
+ * Restoring is checked the same way. A note that was typed into OmniFocus with
+ * whitespace at its ends can come back from an undo without it, and that is
+ * reported as restored.
  */
 export function noteWrite(target: { note: string }, value: string): ReversibleWrite {
   const original = target.note;

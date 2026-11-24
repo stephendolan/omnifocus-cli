@@ -313,24 +313,46 @@ describe('write verification and restoration', () => {
     expect((await of.updateTask(idOf(task), { note: ' \n ' })).note).toBe(null);
   });
 
-  it('still fails a note whose text OmniFocus did not keep', async () => {
+  it('still fails a note whose text OmniFocus did not keep, however small the difference', async () => {
+    const written = 'first line\nsecond  line';
+    // Each rewriting changes something inside the text, which no tolerance covers.
+    for (const rewrite of [
+      (value: string) => value.slice(0, 5),
+      (value: string) => value.replace('second  line', 'second line'),
+      (value: string) => value.replace('\n', ' '),
+      (value: string) => value.replace('\n', '\n\n'),
+      (value: string) => value.replace('first', 'First'),
+      (value: string) => value.replace(' ', '\t'),
+      (value: string) => `${value}.`,
+    ]) {
+      const { of, Task } = fakeOmniFocus();
+      const task = new Task('Task');
+      let stored = 'original';
+      Object.defineProperty(task, 'note', {
+        get: () => stored,
+        set: (value: string) => {
+          stored = value === 'original' ? value : rewrite(value);
+        },
+      });
+      const error = await failure(of.updateTask(idOf(task), { note: written }));
+      expect(error).toMatchObject({
+        code: 'verification_failed',
+        changes: 'none',
+        message: 'Write verification failed: note',
+      });
+      expect(stored).toBe('original');
+    }
+  });
+
+  it('reports a note as restored when undoing it loses only whitespace at its ends', async () => {
     const { of, Task } = fakeOmniFocus();
     const task = new Task('Task');
-    task.note = 'original';
-    let stored = 'original';
-    Object.defineProperty(task, 'note', {
-      get: () => stored,
-      set: (value: string) => {
-        stored = value === 'original' ? value : value.slice(0, 5);
-      },
-    });
-    const error = await failure(of.updateTask(idOf(task), { note: 'a longer note' }));
-    expect(error).toMatchObject({
-      code: 'verification_failed',
-      changes: 'none',
-      message: 'Write verification failed: note',
-    });
-    expect(stored).toBe('original');
+    // As if typed into OmniFocus: the scripting setter would not have kept these ends.
+    task._note = '\tindented\n\n';
+    Object.defineProperty(task, 'flagged', { get: () => false, set: () => {} });
+    const error = await failure(of.updateTask(idOf(task), { note: 'replacement', flagged: true }));
+    expect(error).toMatchObject({ code: 'verification_failed', changes: 'none' });
+    expect(task.note).toBe('indented');
   });
 
   it('undoes earlier writes in a task update when a later write fails', async () => {
