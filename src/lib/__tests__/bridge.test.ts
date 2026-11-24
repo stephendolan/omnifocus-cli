@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { runInNewContext } from 'node:vm';
-import { composeOmniScript, decodeOmniResult, runOsascript } from '../bridge.js';
+import { composeOmniScript as compose, decodeOmniResult, runOsascript } from '../bridge.js';
 import { AutomationPermissionError } from '../consent.js';
 import { OmniFocusError } from '../errors.js';
 import { mockJxaEnvironment } from './fixtures/mock-jxa.js';
@@ -16,6 +16,8 @@ function decodeFailure(output: string): OmniFocusError {
 
 describe('composeOmniScript', () => {
   const echo = (args: unknown) => args;
+  const composeOmniScript = <A>(operation: (args: A) => unknown, args: A) =>
+    compose(operation, args, Date.now() + 60_000);
 
   it('passes arguments as data, whatever characters and keys they hold', () => {
     const args = {
@@ -52,6 +54,33 @@ describe('composeOmniScript', () => {
     );
   });
 
+  it('does not run an operation whose deadline has passed', () => {
+    const sandbox = { ran: false };
+    const mark = new Function('ran = true; return 1') as () => number;
+    const expired = decodeFailure(
+      runInNewContext(compose(mark, undefined, Date.now() - 1), sandbox)
+    );
+    expect(expired).toMatchObject({
+      code: 'expired',
+      statusCode: 504,
+      changes: 'none',
+      message: 'The request expired before OmniFocus ran it; nothing was changed',
+    });
+    expect(sandbox.ran).toBe(false);
+    expect(
+      decodeOmniResult<number>(
+        runInNewContext(compose(mark, undefined, Date.now() + 60_000), sandbox)
+      )
+    ).toBe(1);
+    expect(sandbox.ran).toBe(true);
+  });
+
+  it('refuses to compose a script whose deadline is not a finite number', () => {
+    for (const deadline of [Number.NaN, Number.POSITIVE_INFINITY, undefined as unknown as number]) {
+      expect(() => compose(echo, {}, deadline)).toThrow('Invalid script deadline');
+    }
+  });
+
   it('reports a name OmniFocus does not provide as a script error', () => {
     // A stand-in for runtime code that calls an Omni Automation function that does not exist.
     const error = decodeFailure(
@@ -84,6 +113,19 @@ describe('decodeOmniResult', () => {
       );
       expect(error).toMatchObject({ code, statusCode, message: 'detail' });
     }
+  });
+
+  it('takes what a failure changed from the envelope, or from the code when it is silent', () => {
+    const failed = (error: object) => decodeFailure(JSON.stringify({ ok: false, error }));
+    const base = { name: 'Error', message: 'detail' };
+    expect(failed({ ...base, code: 'not_found' }).changes).toBe('none');
+    expect(failed({ ...base, code: 'verification_failed' }).changes).toBe('none');
+    expect(failed({ ...base, code: 'partial_write' }).changes).toBe('partial');
+    expect(failed({ ...base, code: 'script_error' }).changes).toBe('unknown');
+    expect(failed({ ...base, code: 'script_error', changes: 'none' }).changes).toBe('none');
+    expect(failed({ ...base, code: 'script_error', changes: 'everything' }).changes).toBe(
+      'unknown'
+    );
   });
 
   it('treats an unknown failure code as a script error', () => {

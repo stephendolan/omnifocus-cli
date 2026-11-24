@@ -80,6 +80,30 @@ HTTP request capacity and OmniFocus execution capacity are separate. Disconnects
 free HTTP capacity; an OmniFocus execution retains its slot until its promise
 settles. The limit applies across all requests to that listener.
 
+Each listener admits OmniFocus operations through one gate. A call that times
+out leaves its Apple event queued inside OmniFocus, where it holds a thread
+until OmniFocus reaches it. After a timeout the gate therefore answers
+`unresponsive` (503) for 30 seconds without sending anything, then admits one
+call at a time. An answer from OmniFocus, including an error such as
+`not_found`, reopens the gate. A timeout holds it for another 30 seconds. A
+failure that never reached OmniFocus, such as rejected arguments or a consent
+error, leaves it admitting one call at a time. A timeout from a call sent before
+the gate last held or reopened is ignored. Restarting a listener clears its
+gate. One slow call that times out holds every caller for those 30 seconds.
+
+Every script also carries the moment its caller stops waiting and does nothing
+when OmniFocus reaches it later, so a queued call cannot change the database
+after its caller was told it timed out. A script OmniFocus had already started
+runs to completion.
+
+Listeners log to stderr with a UTC timestamp: one startup line naming the CLI
+version, endpoint, and mode; `bridge=first-answer` once, when OmniFocus answers
+the first call after startup; one line per failed tool call (`tool`, `error`,
+`status`, `changes`, `ms`); and `bridge=unresponsive` / `bridge=responding` when
+the gate holds and reopens. Lines never include arguments or error detail.
+Successful calls are otherwise not logged. The startup and first-answer lines
+confirm a restart on a listener that the operator cannot authenticate to.
+
 ## Mac Mini public deployment example
 
 The files in [deployment/](deployment/) are templates. Replace the example
@@ -372,9 +396,9 @@ Switch the fallback to the same launcher and pinned runtime, initialize on
 Do not request consent again. If a prompt appears, stop. Public initialization
 without credentials must still return 401; authenticated initialization supplies
 the CLI version and icons. Check the live Node child executable and its
-`--version` as well as the new listener startup log. The stock startup log prints
-the endpoint, not the Node version. Verify changed PIDs and launch times after
-each planned restart.
+`--version` as well as the new listener startup log. The startup log prints the
+CLI version, endpoint, and mode, not the Node version. Verify changed PIDs and
+launch times after each planned restart.
 
 ### Recovery after a timeout
 
@@ -382,6 +406,13 @@ Stop further reads and restarts, including a planned runtime restoration. Leave
 OmniFocus, dialogs, and TCC state untouched. Preserve the client deadline,
 startup log, process IDs, and read-only TCC attribution evidence. HTTP 200 alone
 is not success; parse the tool result and reject `isError: true`.
+
+A timeout returns `code: "timeout"`; the calls that follow within 30 seconds
+return `code: "unresponsive"` without reaching OmniFocus. The listener log
+records both, with `bridge=unresponsive` at the moment the hold began. Each
+`changes` value states what a failed call did: a write that timed out is
+`unknown` and needs a read-back once reads work again, while `unresponsive`,
+`expired`, and every failed read are `none`.
 
 A first read after restart can exceed the client's deadline, but that does not
 establish the cause. An HTTP disconnect also does not prove the server-side

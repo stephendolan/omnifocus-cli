@@ -299,9 +299,16 @@ describe('execution capacity after disconnect under Node', () => {
         '/mcp',
         rpc(21, 'tools/call', { name: 'list_perspectives', arguments: {} })
       );
-      expect(JSON.parse(blocked.body).result).toMatchObject({
-        isError: true,
-        content: [{ type: 'text', text: 'Too many concurrent OmniFocus operations' }],
+      const result = JSON.parse(blocked.body).result;
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0].text)).toEqual({
+        error: {
+          name: 'omnifocus_error',
+          detail: 'Too many concurrent OmniFocus operations',
+          statusCode: 503,
+          code: 'busy',
+          changes: 'none',
+        },
       });
       child.send('release');
       await once(child, 'message');

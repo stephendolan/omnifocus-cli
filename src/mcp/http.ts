@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { createExecutionGate } from '../lib/execution-gate.js';
 import { createAccessVerifier, type AccessConfig } from './access.js';
 import { createMcpServer, type McpServerOptions } from './server.js';
 import { loadMcpIcons } from './icons.js';
@@ -55,19 +56,11 @@ export function runMcpHttpServer(
   const verifyAccess = options.access ? createAccessVerifier(options.access) : undefined;
   const hostnames = new Set([...LOOPBACK_HOSTNAMES, ...allowedHostnames].map(normalizeHostname));
   let inFlight = 0;
-  let executing = 0;
-
-  async function execute<T>(operation: () => Promise<T>): Promise<T> {
-    if (executing >= MAX_IN_FLIGHT_REQUESTS) {
-      throw new Error('Too many concurrent OmniFocus operations');
-    }
-    executing++;
-    try {
-      return await operation();
-    } finally {
-      executing--;
-    }
-  }
+  // One gate for the listener: every request shares its capacity and its view of bridge health.
+  const execute = createExecutionGate({
+    maxConcurrent: MAX_IN_FLIGHT_REQUESTS,
+    log: options.log,
+  });
 
   const httpServer = createServer((req, res) => {
     const hostname = hostnameOf(req.headers.host);

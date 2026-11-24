@@ -16,12 +16,15 @@ export type OmniErrorCode =
   | 'invalid'
   | 'verification_failed'
   | 'partial_write'
+  | 'expired'
   | 'script_error';
 
 export interface OmniFailure {
   code: string;
   name: string;
   message: string;
+  /** Present when the runtime knows what the failed request left behind. */
+  changes?: string;
 }
 
 export type ProjectStatusName = 'active' | 'on hold' | 'dropped' | 'done';
@@ -95,17 +98,32 @@ export interface ReversibleWrite extends CheckedWrite {
 
 // Entry point and errors
 
-/** Runs one operation and reports its value or failure as a JSON envelope. */
-export function invoke<A, R>(operation: (args: A) => R, args: A): string {
+/**
+ * Runs one operation and reports its value or failure as a JSON envelope.
+ *
+ * `deadline` is when the caller stops waiting, in epoch milliseconds. A call
+ * the caller gave up on can still sit in OmniFocus's queue and run much later,
+ * so a script that starts past its deadline does nothing.
+ */
+export function invoke<A, R>(operation: (args: A) => R, args: A, deadline: number): string {
   try {
+    if (Date.now() > deadline) {
+      fail('expired', 'The request expired before OmniFocus ran it; nothing was changed');
+    }
     return JSON.stringify({ ok: true, value: operation(args) });
   } catch (error) {
-    const thrown = (error ?? {}) as { code?: unknown; name?: unknown; message?: unknown };
+    const thrown = (error ?? {}) as {
+      code?: unknown;
+      name?: unknown;
+      message?: unknown;
+      changes?: unknown;
+    };
     const failure: OmniFailure = {
       code: typeof thrown.code === 'string' ? thrown.code : 'script_error',
       name: String(thrown.name ?? 'Error'),
       message: String(thrown.message ?? error),
     };
+    if (typeof thrown.changes === 'string') failure.changes = thrown.changes;
     return JSON.stringify({ ok: false, error: failure });
   }
 }
@@ -116,6 +134,21 @@ export function fail(code: OmniErrorCode, message: string): never {
 
 export function messageOf(error: unknown): string {
   return String((error as { message?: unknown } | null)?.message ?? error);
+}
+
+/**
+ * Marks a failure whose writes were all undone and checked, so the caller
+ * learns that nothing changed even when the failure itself is unexpected.
+ */
+export function unchanged(error: unknown): unknown {
+  try {
+    if (typeof error === 'object' && error !== null) {
+      (error as { changes?: string }).changes = 'none';
+    }
+  } catch {
+    // An error that cannot carry the mark is reported with its default outcome.
+  }
+  return error;
 }
 
 // Identity and lookup
@@ -415,7 +448,7 @@ export function commit(writes: ReversibleWrite[], lifecycle: CheckedWrite[]): vo
     if (failures.length) {
       fail('partial_write', `${messageOf(error)}; restoration failed: ${failures.join('; ')}`);
     }
-    throw error;
+    throw unchanged(error);
   }
 
   try {
@@ -858,7 +891,11 @@ export function finishCreated<T extends DatabaseObject>(
         `${messageOf(error)}; created ${kind} cleanup failed: ${messageOf(cleanupError)}`
       );
     }
-    throw error;
+    // The object is gone, so nothing is left partial even if undoing its fields had failed.
+    if ((error as { code?: unknown } | null)?.code === 'partial_write') {
+      fail('verification_failed', `${messageOf(error)}; the new ${kind} was deleted`);
+    }
+    throw unchanged(error);
   }
 }
 
@@ -1185,7 +1222,7 @@ export function updatePerspectiveRules(args: { idOrName: string; definition: Per
         `${messageOf(error)}; perspective rules rollback failed: ${failures.join('; ')}`
       );
     }
-    throw error;
+    throw unchanged(error);
   }
 }
 

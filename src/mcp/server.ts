@@ -3,8 +3,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { Icon } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import packageJson from '../../package.json' with { type: 'json' };
-import { AutomationPermissionError } from '../lib/consent.js';
 import { errorResponse } from '../lib/errors.js';
+import { createExecutionGate, type Execute } from '../lib/execution-gate.js';
 import { OmniFocus } from '../lib/omnifocus.js';
 import { isAvailable, type CapabilityMode } from './capabilities.js';
 import { loadMcpIcons } from './icons.js';
@@ -14,7 +14,10 @@ export interface McpServerOptions {
   mode?: CapabilityMode;
   icons?: Icon[];
   omniFocus?: OmniFocus;
-  execute?: <T>(operation: () => Promise<T>) => Promise<T>;
+  /** Admits operations to OmniFocus. A listener shares one gate across its requests. */
+  execute?: Execute;
+  /** Receives one line per failed tool call and per change in bridge health. */
+  log?: (message: string) => void;
 }
 
 function jsonResponse(data: unknown) {
@@ -25,15 +28,32 @@ function jsonResponse(data: unknown) {
 export function createMcpServer(options: McpServerOptions = {}): McpServer {
   const mode = options.mode ?? 'full';
   const of = options.omniFocus ?? new OmniFocus();
-  const execute = options.execute ?? (<T>(operation: () => Promise<T>) => operation());
+  const log = (message: string) => {
+    try {
+      options.log?.(message);
+    } catch {
+      // A log that cannot be written must not turn a tool result into a failure.
+    }
+  };
+  const execute = options.execute ?? createExecutionGate({ log });
   const available = TOOLS.filter((tool) => isAvailable(tool, mode));
 
-  async function respond<T>(operation: () => Promise<T>) {
+  // Every failure reaches the client as the same typed JSON the CLI prints. The
+  // log line carries the tool and the outcome, never arguments or detail, which
+  // can hold the user's task text.
+  async function respond<T>(tool: string, operation: () => Promise<T>) {
+    const started = Date.now();
     try {
       return jsonResponse(await execute(operation));
     } catch (error) {
-      if (!(error instanceof AutomationPermissionError)) throw error;
-      return { ...jsonResponse(errorResponse(error)), isError: true };
+      const body = errorResponse(error);
+      const { name, statusCode } = body.error;
+      const code = 'code' in body.error ? body.error.code : name;
+      const changes = 'changes' in body.error ? body.error.changes : 'unstated';
+      log(
+        `tool=${tool} error=${code} status=${statusCode} changes=${changes} ms=${Date.now() - started}`
+      );
+      return { ...jsonResponse(body), isError: true };
     }
   }
 
@@ -47,7 +67,7 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
     server.registerTool(
       tool.name,
       { description: tool.description, inputSchema: tool.inputSchema },
-      async (args) => respond(() => tool.run(of, args))
+      async (args) => respond(tool.name, () => tool.run(of, args))
     );
   }
 
