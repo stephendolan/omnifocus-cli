@@ -151,14 +151,16 @@ for fidelity checks and failure boundaries.
 of folder list                      # List all folders
 of folder list --dropped            # Include dropped
 of folder view "Work"               # View folder details
-of folder create "Work"             # Create or reuse a top-level folder
+of folder create "Work"             # Create or reuse a folder at the library root
+of folder create "Later" --parent "Work"
 ```
 
-`folder create` matches exact top-level names, including dropped folders. It
-returns the folder fields plus `alreadyExisted`: `false` for a new folder and
-`true` when reusing one. Nested folders with the same name do not match. The
-`create_folder` MCP tool accepts `{ "name": "Work" }` with the same behavior and
-is available in full mode only.
+`folder create` matches exact names among direct children of the selected parent,
+including dropped folders. Omit `--parent` for the library root. Both the CLI
+option and the full-mode MCP tool `create_folder({ name, parent? })` accept a
+parent folder ID or exact unique name. The result includes the folder fields and
+`alreadyExisted`, which is true when the call reused a folder. Use `list_folders`
+or `of folder list` to read back the tree.
 
 ### Statistics
 
@@ -323,6 +325,14 @@ and tag cycles fail. `update_task.project` accepts a project ID or unique name;
 `null` or `""` moves to the inbox. Omitted placement fields preserve location,
 and so does naming the project or inbox a task is already at the top of; a task
 nested under another task moves to the top level.
+
+To reorder a project, pass either `before` or `after` to `update_project`, or
+use `of project update <idOrName> --before <anchor>` or `--after <anchor>`.
+The anchor must resolve by ID or exact unique name to another project in the
+same folder or at the same library root. Use a separate call for `folder`,
+`status`, or `completed` changes. A successful reorder places the project
+immediately beside the anchor in the sidebar, accounting for intervening
+subfolders.
 
 Project create/update accepts `type`: `parallel`, `sequential`, or `single-action`.
 `singleActionList` is a boolean alias. Existing `sequential` remains available;

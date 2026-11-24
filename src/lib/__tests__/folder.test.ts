@@ -44,6 +44,60 @@ describe('folder creation', () => {
     expect(context.folders.length).toBe(1);
   });
 
+  it('creates and reuses exact direct child names independently under different parents', async () => {
+    const { of } = fakeOmniFocus();
+    const home = await of.createFolder('Home');
+    const work = await of.createFolder('Work');
+    const root = await of.createFolder('Someday');
+    const homeChild = await of.createFolder('Someday', home.id);
+    const workChild = await of.createFolder('Someday', 'Work');
+    const grandchild = await of.createFolder('Someday', homeChild.id);
+    expect(homeChild).toMatchObject({ parent: 'Home', alreadyExisted: false });
+    expect(workChild).toMatchObject({ parent: 'Work', alreadyExisted: false });
+    expect(new Set([root.id, homeChild.id, workChild.id, grandchild.id]).size).toBe(4);
+    expect(await of.createFolder('Someday', 'Home')).toMatchObject({
+      id: homeChild.id,
+      alreadyExisted: true,
+    });
+    expect(await of.listFolders()).toMatchObject([
+      { id: home.id, children: [{ id: homeChild.id, children: [{ id: grandchild.id }] }] },
+      { id: work.id, children: [{ id: workChild.id }] },
+      { id: root.id, children: [] },
+    ]);
+  });
+
+  it('reports ambiguous and missing folder parents without creating anything', async () => {
+    const { of } = fakeOmniFocus();
+    const first = await of.createFolder('Parent');
+    const second = await of.createFolder('Parent', first.id);
+    await expect(of.createFolder('Child', 'Parent')).rejects.toMatchObject({
+      code: 'ambiguous',
+      statusCode: 400,
+      changes: 'none',
+      message: expect.stringContaining(first.id),
+    });
+    await expect(of.createFolder('Child', 'parent')).rejects.toMatchObject({
+      code: 'not_found',
+      statusCode: 404,
+      changes: 'none',
+    });
+    expect(await of.listFolders()).toMatchObject([
+      { id: first.id, children: [{ id: second.id, children: [] }] },
+    ]);
+    expect(await of.createFolder('Child', second.id)).toMatchObject({ parent: 'Parent' });
+  });
+
+  it('rejects empty and null folder parents', async () => {
+    const { of } = fakeOmniFocus();
+    for (const parent of ['', null]) {
+      await expect(of.createFolder('Child', parent as string)).rejects.toMatchObject({
+        statusCode: 400,
+        message: expect.stringContaining('parent:'),
+      });
+    }
+    expect(await of.listFolders()).toEqual([]);
+  });
+
   it('matches exact top-level names and ignores nested names', async () => {
     const { of, Folder, context } = fakeOmniFocus();
     const parent = new Folder('Parent');
@@ -96,7 +150,7 @@ describe('folder creation', () => {
     const output = spyOn(console, 'log').mockImplementation(() => {});
     try {
       await createFolderCommand().parseAsync(['create', 'Work'], { from: 'user' });
-      expect(create.mock.calls).toEqual([['Work']]);
+      expect(create.mock.calls).toEqual([['Work', undefined]]);
       expect(output.mock.calls).toEqual([[JSON.stringify(result, null, 2)]]);
     } finally {
       create.mockRestore();

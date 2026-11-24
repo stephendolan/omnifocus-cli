@@ -63,6 +63,8 @@ export function createProjectCommand(): Command {
     .option('--incomplete', 'Set status to active')
     .option('--note <text>', 'New note')
     .option('-f, --folder <name>', 'Move to folder')
+    .option('--before <idOrName>', 'Move immediately before a sibling project')
+    .option('--after <idOrName>', 'Move immediately after a sibling project')
     .option('-t, --tag <tags...>', 'Replace tags')
     .addOption(new Option('-s, --sequential', 'Make it sequential').conflicts('parallel'))
     .option('-p, --parallel', 'Make it parallel')
@@ -82,6 +84,8 @@ export function createProjectCommand(): Command {
           ...(options.name !== undefined && { name: options.name }),
           ...(options.note !== undefined && { note: options.note }),
           ...(options.folder !== undefined && { folder: options.folder }),
+          ...(options.before !== undefined && { before: options.before }),
+          ...(options.after !== undefined && { after: options.after }),
           ...(options.tag && { tags: options.tag }),
           ...(options.sequential && { sequential: true }),
           ...(options.parallel && { sequential: false }),

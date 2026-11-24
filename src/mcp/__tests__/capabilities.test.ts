@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, spyOn } from 'bun:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { OmniFocus } from '../../lib/omnifocus.js';
+import { fakeOmniFocus } from '../../lib/__tests__/fixtures/fake-omnifocus.js';
 import { AutomationPermissionError } from '../../lib/consent.js';
 import packageJson from '../../../package.json' with { type: 'json' };
 import { createMcpServer } from '../server.js';
@@ -200,7 +201,7 @@ describe('capability modes', () => {
       clients.push(client);
       const result = await client.callTool({ name: 'create_folder', arguments: { name: 'Work' } });
       expect(result.content).toEqual([{ type: 'text', text: JSON.stringify(folder, null, 2) }]);
-      expect(create.mock.calls).toEqual([['Work']]);
+      expect(create.mock.calls).toEqual([['Work', undefined]]);
       const search = await client.callTool({
         name: 'search_tools',
         arguments: { query: '^create_folder$' },
@@ -214,7 +215,7 @@ describe('capability modes', () => {
                 {
                   name: 'create_folder',
                   description:
-                    'Create a top-level folder, or return an existing folder with the same name',
+                    'Create or reuse a folder with an exact name under the selected parent or library root',
                 },
               ],
             },
@@ -226,5 +227,35 @@ describe('capability modes', () => {
     } finally {
       create.mockRestore();
     }
+  });
+
+  it('exposes project ordering and nested creation through the MCP tool schemas', async () => {
+    const { of } = fakeOmniFocus();
+    const anchor = await of.createProject({ name: 'Anchor' });
+    const moved = await of.createProject({ name: 'Moved' });
+    const parent = await of.createFolder('Parent');
+    const client = await connect('full', of);
+    clients.push(client);
+    const call = (name: string, args: Record<string, unknown>) =>
+      client.callTool({ name, arguments: args });
+
+    expect(
+      await call('update_project', { idOrName: moved.id, before: anchor.id, status: 'active' })
+    ).toMatchObject({
+      isError: true,
+      content: [{ text: expect.stringContaining('Ordering cannot combine') }],
+    });
+    expect(
+      (await call('update_project', { idOrName: moved.id, before: anchor.id })).isError
+    ).toBeFalsy();
+    expect((await of.listProjects()).map(({ id }) => id)).toEqual([moved.id, anchor.id]);
+    expect(
+      (await call('update_project', { idOrName: moved.id, after: 'Anchor' })).isError
+    ).toBeFalsy();
+    expect((await of.listProjects()).map(({ id }) => id)).toEqual([anchor.id, moved.id]);
+    expect((await call('create_folder', { name: 'Child', parent: parent.id })).isError).toBeFalsy();
+    expect(await of.listFolders()).toMatchObject([
+      { id: parent.id, children: [{ name: 'Child' }] },
+    ]);
   });
 });

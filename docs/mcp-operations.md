@@ -216,9 +216,12 @@ listener's code; it takes effect at the listener's next restart. The startup
 log line shows the version a listener loaded, and the package directory shows
 what it will load next.
 
-`folder create <name>` and the full-mode `create_folder` tool return the folder
-fields plus `alreadyExisted`. They match exact top-level names, including dropped
-folders, and reuse a match without changing it. Nested names do not match.
+`folder create <name> --parent <idOrName>` and the full-mode `create_folder`
+tool match names among direct children of the selected folder, including dropped
+children. Omit the parent to select the library root. Read back the result in
+`list_folders`. For project reorder acceptance, put a subfolder between the
+projects and compare `list_projects` order with the Projects sidebar. Use the
+same scratch check at the library root.
 
 Prepare `com.example.omnifocus-cloudflared` from the separate template,
 substituting `__TOKEN_DIRECTORY__` with `~/.cloudflared` expanded to an absolute

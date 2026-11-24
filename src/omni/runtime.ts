@@ -57,6 +57,8 @@ export interface ProjectChanges {
   type?: ProjectTypeName;
   singleActionList?: boolean;
   completed?: boolean;
+  before?: string;
+  after?: string;
 }
 
 export interface TagChanges {
@@ -211,9 +213,23 @@ export function resolveFolder(reference: string): Folder {
   );
 }
 
-export function resolveProject(reference: string): Project {
+export function resolveProject(reference: string, forOrdering = false): Project {
+  const projects = flattenedProjects;
+  if (forOrdering) {
+    const projectMatches = projects.some(
+      (project) => project.id.primaryKey === reference || project.name === reference
+    );
+    if (
+      flattenedFolders.some(
+        (folder) =>
+          folder.id.primaryKey === reference || (!projectMatches && folder.name === reference)
+      )
+    ) {
+      fail('invalid', 'Projects can only be ordered relative to other projects');
+    }
+  }
   return resolveUnique(
-    flattenedProjects,
+    projects,
     reference,
     'Project',
     (project) => projectStatusName(project.status),
@@ -824,31 +840,45 @@ export function nextSection(project: Project): Project | Folder | null {
   return index === -1 ? null : (sections[index + 1] ?? null);
 }
 
-export function projectFolderWrite(project: Project, folder: Folder | null): ReversibleWrite {
+export function projectPlacementWrite(
+  project: Project,
+  destination: { folder: Folder | null } | { anchor: Project; before: boolean }
+): ReversibleWrite {
   const originalFolder = project.parentFolder;
   const originalNext = nextSection(project);
-  const alreadyThere = sameObject(originalFolder, folder);
+  function isPlaced(): boolean {
+    if ('folder' in destination) return sameObject(project.parentFolder, destination.folder);
+    const { anchor, before } = destination;
+    if (!sameObject(project.parentFolder, originalFolder)) return false;
+    const sections = sectionsIn(originalFolder);
+    const anchorIndex = indexOfObject(sections, anchor);
+    const neighbor = sections[anchorIndex + (before ? -1 : 1)];
+    return anchorIndex !== -1 && sameObject(neighbor ?? null, project);
+  }
+  function isRestored(): boolean {
+    return (
+      sameObject(project.parentFolder, originalFolder) &&
+      sameObject(nextSection(project), originalNext)
+    );
+  }
   return {
-    field: 'folder',
+    field: 'folder' in destination ? 'folder' : 'order',
     apply() {
-      if (!alreadyThere) moveSections([project], folder ? folder.ending : library.ending);
+      if (isPlaced()) return;
+      const position =
+        'folder' in destination
+          ? (destination.folder?.ending ?? library.ending)
+          : destination.before
+            ? destination.anchor.before
+            : destination.anchor.after;
+      moveSections([project], position);
     },
-    verify() {
-      return sameObject(project.parentFolder, folder);
-    },
+    verify: isPlaced,
     undo() {
-      if (alreadyThere) return;
-      moveSections(
-        [project],
-        originalNext ? originalNext.before : originalFolder ? originalFolder.ending : library.ending
-      );
+      if (isRestored()) return;
+      moveSections([project], originalNext?.before ?? originalFolder?.ending ?? library.ending);
     },
-    undone() {
-      return (
-        sameObject(project.parentFolder, originalFolder) &&
-        sameObject(nextSection(project), originalNext)
-      );
-    },
+    undone: isRestored,
   };
 }
 
@@ -896,6 +926,14 @@ export function applyProjectChanges(project: Project, changes: ProjectChanges): 
       : changes.folder
         ? resolveFolder(changes.folder)
         : null;
+  const anchorReference = changes.before ?? changes.after;
+  const anchor = anchorReference === undefined ? undefined : resolveProject(anchorReference, true);
+  if (anchor) {
+    if (sameObject(project, anchor)) fail('invalid', 'Cannot order a project relative to itself');
+    if (!sameObject(project.parentFolder, anchor.parentFolder)) {
+      fail('invalid', 'Ordering requires sibling projects in the same folder or library root');
+    }
+  }
 
   const writes: ReversibleWrite[] = [];
   if (changes.name !== undefined) writes.push(propertyWrite(project, 'name', changes.name, 'name'));
@@ -939,7 +977,10 @@ export function applyProjectChanges(project: Project, changes: ProjectChanges): 
   if (status !== undefined) {
     writes.push(propertyWrite(project, 'status', projectStatusNamed(status), 'status'));
   }
-  if (folder !== undefined) writes.push(projectFolderWrite(project, folder));
+  if (folder !== undefined) writes.push(projectPlacementWrite(project, { folder }));
+  if (anchor) {
+    writes.push(projectPlacementWrite(project, { anchor, before: changes.before !== undefined }));
+  }
   if (requestedTags) {
     writes.push(tagsWrite(project, (tag) => project.addTag(tag), requestedTags));
   }
@@ -1233,9 +1274,11 @@ export function getFolder(args: { idOrName: string; includeDropped?: boolean }) 
   return serializeFolder(resolveFolder(args.idOrName), Boolean(args.includeDropped));
 }
 
-export function createFolder(args: { name: string }) {
-  const existing = folders.find((folder) => folder.name === args.name) ?? null;
-  const folder = existing ?? new Folder(args.name, library.ending);
+export function createFolder(args: { name: string; parent?: string }) {
+  const parent = args.parent === undefined ? null : resolveFolder(args.parent);
+  const siblings = parent ? parent.folders : folders;
+  const existing = siblings.find((folder) => folder.name === args.name) ?? null;
+  const folder = existing ?? new Folder(args.name, parent?.ending ?? library.ending);
   return { ...serializeFolder(folder, false), alreadyExisted: existing !== null };
 }
 

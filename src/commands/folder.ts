@@ -10,11 +10,12 @@ export function createFolderCommand(): Command {
 
   command
     .command('create <name>')
-    .description('Create a top-level folder, or return an existing folder with the same name')
+    .description('Create or reuse a folder under the selected parent')
+    .option('--parent <idOrName>', 'Parent folder ID or unique name')
     .action(
-      withErrorHandling(async (name) => {
+      withErrorHandling(async (name, options) => {
         const of = new OmniFocus();
-        const folder = await of.createFolder(name);
+        const folder = await of.createFolder(name, options.parent);
         outputJson(folder);
       })
     );

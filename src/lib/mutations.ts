@@ -83,8 +83,27 @@ export const taskUpdate = z
       });
     }
   });
-const projectUpdate = z.strictObject({ ...projectFields, completed: z.boolean().optional() });
-export const projectMutation = projectUpdate.superRefine(projectConflicts);
+const projectUpdate = z.strictObject({
+  ...projectFields,
+  completed: z.boolean().optional(),
+  before: name
+    .optional()
+    .describe('Place immediately before a sibling project by ID or unique name'),
+  after: name.optional().describe('Place immediately after a sibling project by ID or unique name'),
+});
+export const projectMutation = projectUpdate.superRefine((value, ctx) => {
+  projectConflicts(value, ctx);
+  if (
+    (value.before !== undefined && value.after !== undefined) ||
+    ((value.before !== undefined || value.after !== undefined) &&
+      (value.folder !== undefined || value.status !== undefined || value.completed !== undefined))
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'Ordering cannot combine before/after or folder/status/completed arguments',
+    });
+  }
+});
 export const projectCreate = z
   .strictObject({ ...projectFields, name })
   .superRefine(projectConflicts);
@@ -100,7 +119,8 @@ export const tagUpdate = z.strictObject({
   parentId: location,
 });
 export const folderCreate = z.strictObject({
-  name: name.describe('Top-level folder name (exact match)'),
+  name: name.describe('Folder name (exact match among direct children)'),
+  parent: name.optional().describe('Parent folder ID or unique name; omit for the library root'),
 });
 
 // Read arguments. The MCP tools and the library parse the same schemas, so a
