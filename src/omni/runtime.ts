@@ -536,6 +536,57 @@ export function propertyWrite<T extends object, K extends keyof T>(
   };
 }
 
+/**
+ * A note reduced to the text OmniFocus keeps. OmniFocus rewrites a note as it
+ * stores it: CR and CRLF line endings and the Unicode line and paragraph
+ * separators become line feeds, control characters and a byte order mark are
+ * dropped, and whitespace at either end is trimmed. Two notes with the same
+ * text here are the same note.
+ *
+ * Written with character codes rather than a pattern, so that no line
+ * separator ever appears in this function's source text.
+ */
+export function noteText(note: string): string {
+  let text = '';
+  for (let index = 0; index < note.length; index++) {
+    const code = note.charCodeAt(index);
+    if (code === 13) {
+      text += '\n';
+      if (note.charCodeAt(index + 1) === 10) index++;
+    } else if (code === 0x2028 || code === 0x2029) {
+      text += '\n';
+    } else if (code === 0xfeff || (code < 32 && code !== 9 && code !== 10)) {
+      continue;
+    } else {
+      text += note[index];
+    }
+  }
+  return text.trim();
+}
+
+/**
+ * Writes a note and checks that OmniFocus kept its text. An exact comparison
+ * would fail every note that ends in a newline or uses CRLF line endings.
+ */
+export function noteWrite(target: { note: string }, value: string): ReversibleWrite {
+  const original = target.note;
+  return {
+    field: 'note',
+    apply() {
+      target.note = value;
+    },
+    verify() {
+      return noteText(target.note) === noteText(value);
+    },
+    undo() {
+      target.note = original;
+    },
+    undone() {
+      return noteText(target.note) === noteText(original);
+    },
+  };
+}
+
 export function dateWrite(
   task: Task,
   key: 'deferDate' | 'dueDate' | 'plannedDate',
@@ -722,7 +773,7 @@ export function applyTaskChanges(task: Task, changes: TaskChanges): void {
 
   const writes: ReversibleWrite[] = [];
   if (changes.name !== undefined) writes.push(propertyWrite(task, 'name', changes.name, 'name'));
-  if (changes.note !== undefined) writes.push(propertyWrite(task, 'note', changes.note, 'note'));
+  if (changes.note !== undefined) writes.push(noteWrite(task, changes.note));
   if (changes.flagged !== undefined) {
     writes.push(propertyWrite(task, 'flagged', changes.flagged, 'flagged'));
   }
@@ -840,7 +891,7 @@ export function applyProjectChanges(project: Project, changes: ProjectChanges): 
 
   const writes: ReversibleWrite[] = [];
   if (changes.name !== undefined) writes.push(propertyWrite(project, 'name', changes.name, 'name'));
-  if (changes.note !== undefined) writes.push(propertyWrite(project, 'note', changes.note, 'note'));
+  if (changes.note !== undefined) writes.push(noteWrite(project, changes.note));
 
   if (
     changes.type !== undefined ||

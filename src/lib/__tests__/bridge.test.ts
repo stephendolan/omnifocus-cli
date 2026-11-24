@@ -3,6 +3,7 @@ import { runInNewContext } from 'node:vm';
 import { composeOmniScript as compose, decodeOmniResult, runOsascript } from '../bridge.js';
 import { AutomationPermissionError } from '../consent.js';
 import { OmniFocusError } from '../errors.js';
+import { noteText } from '../../omni/runtime.js';
 import { mockJxaEnvironment } from './fixtures/mock-jxa.js';
 
 function decodeFailure(output: string): OmniFocusError {
@@ -91,6 +92,25 @@ describe('composeOmniScript', () => {
     expect(error.code).toBe('script_error');
     expect(error.message).toContain('ReferenceError');
     expect(error.message).toContain('moveProjects');
+  });
+});
+
+describe('noteText', () => {
+  it('reduces a note to the text OmniFocus keeps, and nothing less', () => {
+    expect(noteText('a\r\nb\rc\u2028d\u2029e')).toBe('a\nb\nc\nd\ne');
+    expect(noteText(' \n text \t\n')).toBe('text');
+    expect(noteText('\ufeffa\u0000b\u0001c\u001fd')).toBe('abcd');
+    expect(noteText('tab\there\n\nblank line kept  twice')).toBe(
+      'tab\there\n\nblank line kept  twice'
+    );
+    expect(noteText('caf\u00e9 \u65e5\u672c \ud83c\udfaf')).toBe(
+      'caf\u00e9 \u65e5\u672c \ud83c\udfaf'
+    );
+    expect(noteText('a\u00a0b')).toBe('a\u00a0b');
+  });
+
+  it('holds no line separator in its own source, which would break the script it ships in', () => {
+    expect(String(noteText)).not.toMatch(/[\u2028\u2029\r]/);
   });
 });
 

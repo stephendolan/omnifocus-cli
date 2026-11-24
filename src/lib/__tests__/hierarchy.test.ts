@@ -290,6 +290,49 @@ describe('write verification and restoration', () => {
     });
   });
 
+  it('accepts a note that OmniFocus trims or whose line endings it rewrites', async () => {
+    const { of, Project, Task } = fakeOmniFocus();
+    const project = new Project('Project');
+    const task = new Task('Task', project);
+    for (const [written, stored] of [
+      ['ends with a newline\n', 'ends with a newline'],
+      ['  padded  ', 'padded'],
+      ['windows\r\nline endings\r\n', 'windows\nline endings'],
+      ['old mac\rline endings', 'old mac\nline endings'],
+      ['unicode\u2028separators\u2029here', 'unicode\nseparators\nhere'],
+      ['\ufeffbyte order mark', 'byte order mark'],
+      ['control\u0001character', 'controlcharacter'],
+      ['inner  spacing\n\n\tkept', 'inner  spacing\n\n\tkept'],
+    ]) {
+      expect((await of.updateTask(idOf(task), { note: written })).note).toBe(stored);
+      expect((await of.updateProject(idOf(project), { note: written })).note).toBe(stored);
+    }
+    expect(
+      await of.createTask({ name: 'Captured', note: 'first line\r\nsecond line\n' })
+    ).toMatchObject({ name: 'Captured', note: 'first line\nsecond line' });
+    expect((await of.updateTask(idOf(task), { note: ' \n ' })).note).toBe(null);
+  });
+
+  it('still fails a note whose text OmniFocus did not keep', async () => {
+    const { of, Task } = fakeOmniFocus();
+    const task = new Task('Task');
+    task.note = 'original';
+    let stored = 'original';
+    Object.defineProperty(task, 'note', {
+      get: () => stored,
+      set: (value: string) => {
+        stored = value === 'original' ? value : value.slice(0, 5);
+      },
+    });
+    const error = await failure(of.updateTask(idOf(task), { note: 'a longer note' }));
+    expect(error).toMatchObject({
+      code: 'verification_failed',
+      changes: 'none',
+      message: 'Write verification failed: note',
+    });
+    expect(stored).toBe('original');
+  });
+
   it('undoes earlier writes in a task update when a later write fails', async () => {
     const { of, Project, Task, Tag, context } = fakeOmniFocus();
     const home = new Project('Home');
