@@ -238,8 +238,8 @@ export class OmniFocus {
     return this.read(omni.getFolder, { idOrName, includeDropped });
   }
 
-  async createFolder(name: string): Promise<CreateFolderResult> {
-    return this.write(omni.createFolder, parseArguments(folderCreate, { name }));
+  async createFolder(name: string, parent?: string): Promise<CreateFolderResult> {
+    return this.write(omni.createFolder, parseArguments(folderCreate, { name, parent }));
   }
 
   async deleteFolder(idOrName: string): Promise<Deleted> {

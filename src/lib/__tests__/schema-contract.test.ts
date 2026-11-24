@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import type { z } from 'zod';
 import type * as omni from '../../omni/runtime.js';
 import {
+  folderCreate,
   folderFilters,
   projectCreate,
   projectFilters,
@@ -42,6 +43,9 @@ type _TagList = None<
 type _FolderFilters = None<
   Unhandled<z.output<typeof folderFilters>, Parameters<typeof omni.listFolders>[0]>
 >;
+type _FolderCreate = None<
+  Unhandled<z.output<typeof folderCreate>, Parameters<typeof omni.createFolder>[0]>
+>;
 
 describe('schemas and runtime argument types', () => {
   it('reject unknown fields, so nothing reaches the runtime unnamed', () => {
@@ -56,6 +60,7 @@ describe('schemas and runtime argument types', () => {
       projectFilters,
       tagListOptions,
       folderFilters,
+      folderCreate,
     ]) {
       expect(schema.safeParse({ name: 'x', notAField: true }).success).toBe(false);
     }

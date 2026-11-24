@@ -155,12 +155,27 @@ describe('built CLI against a fake database (mock executable, no Apple events)',
     expect((await cli('folder', 'create', 'Scratch')).json).toMatchObject({
       alreadyExisted: false,
     });
+    expect(
+      (await cli('folder', 'create', 'Scratch', '--parent', 'Seeded folder')).json
+    ).toMatchObject({
+      parent: 'Seeded folder',
+      alreadyExisted: false,
+    });
   });
 
   it('rejects option values it used to ignore', async () => {
     // Each case names the failure it must hit, so none can pass for another reason.
     for (const [args, expected] of [
       [['project', 'list', '--status', 'paused'], { name: 'cli_error', detail: 'status: ' }],
+      [
+        ['project', 'update', 'Seeded project', '--before', ''],
+        { name: 'cli_error', detail: 'before: ' },
+      ],
+      [
+        ['project', 'update', 'Seeded project', '--after', 'Missing'],
+        { code: 'not_found', detail: 'Project not found: Missing' },
+      ],
+      [['folder', 'create', 'Child', '--parent', ''], { name: 'cli_error', detail: 'parent: ' }],
       [['tag', 'list', '--sort', 'recent'], { name: 'cli_error', detail: 'sortBy: ' }],
       [['tag', 'list', '--unused-days', 'many'], { name: 'cli_error', detail: 'unusedDays: ' }],
       [['tag', 'list', '--unused-days', ''], { name: 'cli_error', detail: 'unusedDays: ' }],

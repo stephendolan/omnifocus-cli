@@ -60,6 +60,137 @@ describe('hierarchy mutations', () => {
     expect(namesOf(f.projects)).toEqual(['First', 'Second', 'Third']);
   });
 
+  it('moves immediately before and after an on-hold sibling across an interleaved folder', async () => {
+    const { of, Folder, Project } = fakeOmniFocus();
+    const parent = new Folder('Parent');
+    const moved = new Project('Moved', parent);
+    const nested = new Folder('Nested', parent);
+    new Project('Nested project', nested);
+    const anchor = new Project('Anchor', parent);
+    anchor.status = Project.Status.OnHold;
+
+    await of.updateProject(idOf(moved), { before: 'Anchor', note: 'Updated' });
+    expect(namesOf(await of.listProjects())).toEqual(['Nested project', 'Moved', 'Anchor']);
+    expect(namesOf(parent.sections)).toEqual(['Nested', 'Moved', 'Anchor']);
+    expect((await of.getProject(idOf(moved))).note).toBe('Updated');
+
+    await of.updateProject(idOf(moved), { after: idOf(anchor) });
+    expect(namesOf(await of.listProjects())).toEqual(['Nested project', 'Anchor', 'Moved']);
+    expect(namesOf(parent.sections)).toEqual(['Nested', 'Anchor', 'Moved']);
+    expect((await of.getProject(idOf(anchor))).status).toBe('on hold');
+  });
+
+  it('reorders root projects on either side of an interleaved root folder', async () => {
+    const { of, Folder, Project, context } = fakeOmniFocus();
+    const anchor = new Project('Anchor');
+    new Folder('Folder');
+    const moved = new Project('Moved');
+    await of.updateProject(idOf(moved), { after: 'Anchor' });
+    expect(namesOf(context.library)).toEqual(['Anchor', 'Moved', 'Folder']);
+    await of.updateProject(idOf(moved), { before: idOf(anchor) });
+    expect(namesOf(context.library)).toEqual(['Moved', 'Anchor', 'Folder']);
+    expect(namesOf(await of.listProjects())).toEqual(['Moved', 'Anchor']);
+  });
+
+  it('rejects a cross-parent anchor before applying other fields', async () => {
+    const { of, Folder, Project } = fakeOmniFocus();
+    const moved = new Project('Moved');
+    const anchor = new Project('Anchor', new Folder('Other'));
+    const error = await failure(
+      of.updateProject(idOf(moved), { before: idOf(anchor), name: 'New' })
+    );
+    expect(error).toMatchObject({ code: 'invalid', statusCode: 400, changes: 'none' });
+    expect(await of.getProject(idOf(moved))).toMatchObject({ name: 'Moved', folder: null });
+  });
+
+  it('rejects a folder anchor by exact name or ID', async () => {
+    const { of, Folder, Project } = fakeOmniFocus();
+    const parent = new Folder('Parent');
+    const moved = new Project('Moved', parent);
+    const folder = new Folder('Subfolder', parent);
+    for (const before of ['Subfolder', idOf(folder)]) {
+      const error = await failure(of.updateProject(idOf(moved), { before }));
+      expect(error).toMatchObject({ code: 'invalid', statusCode: 400, changes: 'none' });
+      expect(error.message).toContain('relative to other projects');
+    }
+    expect(namesOf(parent.sections)).toEqual(['Moved', 'Subfolder']);
+  });
+
+  it('rejects a self anchor and reports a missing project anchor', async () => {
+    const { of, Project } = fakeOmniFocus();
+    const moved = new Project('Moved');
+    expect(await failure(of.updateProject(idOf(moved), { after: 'Moved' }))).toMatchObject({
+      code: 'invalid',
+      statusCode: 400,
+      changes: 'none',
+    });
+    expect(await failure(of.updateProject(idOf(moved), { before: 'moved' }))).toMatchObject({
+      code: 'not_found',
+      statusCode: 404,
+      changes: 'none',
+    });
+  });
+
+  it('reports all matching project IDs for an ambiguous anchor and accepts an exact ID', async () => {
+    const { of, Project } = fakeOmniFocus();
+    const first = new Project('Anchor');
+    const second = new Project('Anchor');
+    second.status = Project.Status.Done;
+    const moved = new Project('Moved');
+    const error = await failure(of.updateProject(idOf(moved), { before: 'Anchor' }));
+    expect(error).toMatchObject({ code: 'ambiguous', statusCode: 400, changes: 'none' });
+    expect(error.message).toContain(idOf(first));
+    expect(error.message).toContain(idOf(second));
+    await of.updateProject(idOf(moved), { before: idOf(second) });
+    expect((await of.listProjects({ includeDropped: true })).map(({ id }) => id)).toEqual([
+      idOf(first),
+      idOf(moved),
+      idOf(second),
+    ]);
+  });
+
+  it('restores the original next section and other fields when a move leaves a folder in the gap', async () => {
+    const { of, Folder, Project, context } = fakeOmniFocus();
+    const parent = new Folder('Parent');
+    const moved = new Project('Moved', parent);
+    new Folder('Original next', parent);
+    const gap = new Folder('Gap', parent);
+    const anchor = new Project('Anchor', parent);
+    const move = context.moveSections;
+    let misplace = true;
+    context.moveSections = (sections, location) => {
+      move(sections, misplace ? gap.before : location);
+      misplace = false;
+    };
+    const error = await failure(
+      of.updateProject(idOf(moved), { before: idOf(anchor), note: 'Attempted' })
+    );
+    expect(error).toMatchObject({ code: 'verification_failed', changes: 'none' });
+    expect(namesOf(parent.sections)).toEqual(['Moved', 'Original next', 'Gap', 'Anchor']);
+    expect((await of.getProject(idOf(moved))).note).toBeNull();
+  });
+
+  it('rejects invalid reorder arguments before changing any fields', async () => {
+    const { of, Project } = fakeOmniFocus();
+    const moved = new Project('Moved');
+    new Project('Anchor');
+    for (const [options, issue] of [
+      [{ before: '', name: 'New' }, 'before:'],
+      [{ after: null, name: 'New' }, 'after:'],
+      [{ before: 'Anchor', after: 'Anchor' }, 'Ordering cannot combine'],
+      [{ before: 'Anchor', folder: null }, 'Ordering cannot combine'],
+      [{ after: 'Anchor', folder: '' }, 'Ordering cannot combine'],
+      [{ after: 'Anchor', status: 'active' }, 'Ordering cannot combine'],
+      [{ before: 'Anchor', completed: false }, 'Ordering cannot combine'],
+    ] as const) {
+      await expect(of.updateProject(idOf(moved), options as never)).rejects.toMatchObject({
+        statusCode: 400,
+        message: expect.stringContaining(issue),
+      });
+    }
+    expect(namesOf(await of.listProjects())).toEqual(['Moved', 'Anchor']);
+  });
+
   it('creates a tag under a parent that has the same name', async () => {
     const { of, Tag } = fakeOmniFocus();
     const parent = new Tag('Home');

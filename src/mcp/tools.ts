@@ -129,7 +129,7 @@ export const TOOLS: ToolDefinition[] = [
   tool({
     name: 'update_project',
     description:
-      'Update project fields, folder placement, completion, or project type; reject unsupported arguments',
+      'Update project fields or reorder relative to a sibling project. Use one of before or after, without folder, status, or completed.',
     readOnly: false,
     inputSchema: projectMutation.safeExtend({ idOrName: z.string() }),
     run: (of, { idOrName, ...options }) => of.updateProject(idOrName, options),
@@ -244,10 +244,11 @@ export const TOOLS: ToolDefinition[] = [
   }),
   tool({
     name: 'create_folder',
-    description: 'Create a top-level folder, or return an existing folder with the same name',
+    description:
+      'Create or reuse a folder with an exact name under the selected parent or library root',
     readOnly: false,
     inputSchema: folderCreate,
-    run: (of, { name }) => of.createFolder(name),
+    run: (of, { name, parent }) => of.createFolder(name, parent),
   }),
   tool({
     name: 'delete_folder',
