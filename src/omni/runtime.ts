@@ -538,13 +538,14 @@ export function propertyWrite<T extends object, K extends keyof T>(
 
 /**
  * A note reduced to its text, for comparing what was written with what
- * OmniFocus stored. OmniFocus does not keep every note verbatim: live probing
- * showed it changes CR and CRLF line endings, the Unicode line and paragraph
- * separators, control characters, a byte order mark, and spaces and newlines
- * at either end. What it stores instead could not be read back, so this
- * treats every line-break form as a line feed, ignores control characters and
- * byte order marks, and ignores whitespace at either end. A difference of any
- * other kind, anywhere inside the text, still shows.
+ * OmniFocus stored. OmniFocus does not keep every note verbatim. Probing the
+ * live app showed that it stores CR, CRLF, and the Unicode line and paragraph
+ * separators as line feeds, drops byte order marks and the control characters
+ * form feed, vertical tab, and U+0001, and trims whitespace at either end,
+ * including tabs and non-breaking and ideographic spaces. This applies the
+ * same reduction to both notes, so a difference of any other kind, anywhere
+ * inside the text, still shows. NEL (U+0085) and DEL (U+007F) are rewritten in
+ * some way this does not cover, so a note containing one fails verification.
  *
  * Written with character codes rather than a pattern, so that no line
  * separator ever appears in this function's source text.

@@ -22,12 +22,10 @@ export interface FakePerspective {
 const ROOT = Symbol('root');
 
 /**
- * Rewrites a note on the way in. Live OmniFocus does not keep CR or CRLF line
- * endings, Unicode line separators, control characters, a byte order mark, or
- * whitespace at either end of a note, and keeps names as written. What it
- * stores in their place was not observed, so this is one plausible rewriting,
- * not a record of the real one: tests against it show that a rewritten note is
- * accepted, not that OmniFocus rewrites notes this way.
+ * Rewrites a note on the way in, as live OmniFocus was observed to: CR, CRLF,
+ * and Unicode line separators become line feeds, byte order marks and control
+ * characters are dropped, and whitespace at either end is trimmed. Names are
+ * kept as written.
  */
 function storedNote(note: string): string {
   const lineBreak = (code: number) => code === 0x2028 || code === 0x2029 || code === 13;
