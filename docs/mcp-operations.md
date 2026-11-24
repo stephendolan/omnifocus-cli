@@ -18,11 +18,22 @@ bun test
 ```
 
 Merge the reviewed change through a GitHub PR. Tag that main-branch commit with
-`v<package-version>` and push the tag. `.github/workflows/release.yml` tests the
-commit, publishes to npm with GitHub OIDC provenance, then creates the GitHub
-release. Publishing uses npm trusted publishing; no local npm token or OTP is
-needed for this path. Check the actual workflow outcome, registry version, and
-installed artifact's `--version` before declaring currency.
+`v<package-version>` and push the tag. `.github/workflows/release.yml` refuses a
+tag that does not match the package version or whose commit is not on main,
+tests the commit, publishes to npm with GitHub OIDC provenance, then creates the
+GitHub release. Publishing uses npm trusted publishing; no local npm token or
+OTP is needed for this path. Check the actual workflow outcome, registry version,
+and installed artifact's `--version` before declaring currency.
+
+The registry can take several minutes to serve a version after the workflow
+reports it published. Wait for
+`https://registry.npmjs.org/@stephendolan%2fomnifocus-cli/<version>` to answer
+rather than publishing again.
+
+The test suite runs against a fake database that follows the Omni Automation
+declarations. It cannot show that OmniFocus agrees with them, so a release is
+proven only by acceptance against real OmniFocus through a listener. See
+[Upgrading the listeners](#upgrading-the-listeners).
 
 ## Server icon
 
@@ -131,33 +142,79 @@ Changing the audience does not require rebuilding the package.
 Install a pinned npm artifact in:
 
 ```text
-~/Library/Application Support/omnifocus-mcp-public/releases/2.11.0/
+~/Library/Application Support/omnifocus-mcp-public/releases/<version>/
 ```
 
 Use `npm install --prefix <release-directory> --ignore-scripts --save-exact
-@stephendolan/omnifocus-cli@2.11.0`. The signed launcher starts that artifact's
+@stephendolan/omnifocus-cli@<version>`. The signed launcher starts that artifact's
 `dist/cli.js` under an absolute, versioned Node path. The existing global
 installation remains the fallback's CLI artifact. Use the launcher templates
 linked below to prepare the agents in `~/Library/LaunchAgents/`. Keep the public
 installation directory mode 700. Reload only the public service when changing
 its audience or mode.
 
-For an upgrade with fixed LaunchAgent paths, install the pinned npm artifact into
-the public agent's existing prefix (which can retain an older version in its
-directory name). Update the fallback's global package from that same npm artifact,
-preserving unrelated global packages. Keep both installed plists byte for byte,
-including their launcher, Node, CLI, and icon paths. The external Node runtime
-does not own the listeners' Automation grant; the signed launcher bundle does.
-Restart each listener once after updating its artifact:
+### Upgrading the listeners
 
-```sh
-launchctl kickstart -k gui/$(id -u)/com.example.omnifocus-mcp-public
-launchctl kickstart -k gui/$(id -u)/com.example.omnifocus-mcp
-```
+Upgrade one listener at a time, the fallback first. Nothing outside the machine
+depends on the fallback, so a release that misbehaves against real OmniFocus is
+caught there while the public listener still runs the previous version.
 
-Verify changed PIDs and launch times, then initialize each localhost endpoint and
-check version `2.11.0`, `serverInfo.icons`, and its tool list. Full mode has 30 tools; read-only has 17.
-The public endpoint requires a real Access assertion even on localhost.
+Each listener runs the package directory named by the CLI argument in its plist.
+The public agent's prefix can keep an older version in its directory name, and
+the fallback runs from the global installation; both paths stay fixed. Keep both
+installed plists byte for byte, including their launcher, Node, CLI, and icon
+paths. The external Node runtime does not own the listeners' Automation grant;
+the signed launcher bundle does.
+
+1. Record each plist's SHA-256, the version in each package directory, and each
+   listener's PID.
+2. Download the published tarball and compare its SHA-512 with `dist.integrity`
+   from the registry. Unpack it in a directory that holds nothing else.
+3. Back up the fallback's package directory, then copy the tarball's `dist`,
+   `README.md`, `LICENSE`, and `package.json` over the same paths in it, and set
+   the version pinned in that prefix's own `package.json`. This applies only
+   when the release's `dependencies` equal the installed ones. A release that
+   changes dependencies needs a package-manager install into the prefix instead.
+4. Confirm that `<node> <package-directory>/dist/cli.js --version` prints the
+   release. `--version` does not contact OmniFocus.
+5. Restart the fallback once and confirm a new PID and launch time:
+
+   ```sh
+   launchctl kickstart -k gui/$(id -u)/com.example.omnifocus-mcp
+   ```
+
+6. Verify the fallback on localhost: the startup log line names the version and
+   mode, `initialize` reports the version and `serverInfo.icons`, `tools/list`
+   has 30 tools in full mode (17 in read-only), and a real read succeeds. Then
+   run the release's acceptance on scratch objects, delete them by ID, and
+   confirm nothing with the scratch prefix remains.
+7. Only then repeat steps 3 to 5 for the public listener
+   (`com.example.omnifocus-mcp-public`). Its endpoint requires a real Access
+   assertion even on localhost, so verify what can be seen without one: the
+   startup log line, a 401 for a request with no assertion, and
+   `bridge=first-answer` in its log once an authenticated client has called it.
+8. Confirm both plists still match the hashes from step 1.
+
+To roll a listener back, restore its backup into the package directory and
+restart that listener once.
+
+When acceptance on the fallback finds a defect, leave the public listener on the
+version it has, release the fix, and repeat from step 2. The fallback restarts
+once per attempt; the public listener restarts once, for the version that
+passed.
+
+Acceptance creates objects only under a unique scratch prefix, records each ID
+as it is created, and deletes by ID with a read-back. Make its cleanup run on
+any failure of the acceptance itself, and skip it only when the bridge has
+stopped answering. Keep scratch tasks out of the inbox except for the moments a
+check needs them there: other automation may watch the inbox.
+
+Copying files leaves each prefix's lockfile describing the version that a
+package manager last installed there. The fallback's directory is also the
+user's global installation, so a later global install or update can replace the
+listener's code; it takes effect at the listener's next restart. The startup
+log line shows the version a listener loaded, and the package directory shows
+what it will load next.
 
 `folder create <name>` and the full-mode `create_folder` tool return the folder
 fields plus `alreadyExisted`. They match exact top-level names, including dropped

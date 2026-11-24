@@ -309,12 +309,12 @@ Names must not be empty, `estimatedMinutes` is a whole number, and a date and
 time must exist: `2026-02-30` and `24:30` are rejected rather than rolled into
 the next month or day. A tag named twice in one request is assigned once.
 
-OmniFocus does not keep every note as written. It changes CR and CRLF line
-endings, Unicode line separators, control characters, and spaces and newlines at
-either end. A note is therefore checked by its text: line-break style, control
-characters, and whitespace at either end are ignored, and any other difference
-fails. The response returns the note as OmniFocus stored it. Names are kept as
-written.
+OmniFocus does not keep every note as written. It stores CR, CRLF, and Unicode
+line separators as line feeds, drops byte order marks and control characters
+such as form feed, and trims whitespace at either end. A note is therefore
+checked by its text: line-break style, control characters, and whitespace at
+either end are ignored, and any other difference fails. The response returns
+the note as OmniFocus stored it. Names are kept as written.
 
 `update_project.folder` accepts a folder ID or unique exact name; `null` or `""`
 moves to the library root. `update_tag.parent` accepts a tag ID, unique name or
