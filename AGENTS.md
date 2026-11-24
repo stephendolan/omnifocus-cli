@@ -15,6 +15,7 @@
 - A write goes through `commit()` as a list of `ReversibleWrite`s, each of which applies a field, reads it back, and can undo itself. Add a field as another write so it inherits verification and restoration. Completing and dropping a task run last as `CheckedWrite`s: they are read back but never undone, so a failure there reports `partial_write`.
 - `resolveTask`, `resolveProject`, and `resolveFolder` take an ID or a name exactly one object carries. A shared name fails as `ambiguous` with candidates' IDs, including a finished task that shares a remaining task's name. `findTag` also accepts `Parent/Child` paths. Filters use `tagsMatching` and `foldersMatching`, which accept a shared name and fail only when nothing matches, so an empty list never stands for a missing object.
 - `flattenedTasks` includes each project's root task, which carries the project's ID and name. `isProjectRoot()` identifies it; task operations may edit its fields and refuse to move, reorder, complete, drop, or delete it.
+- OmniFocus does not store every note verbatim: it changes line endings and whitespace at either end. `noteWrite()` therefore compares notes through `noteText()`, which ignores those differences and no others. Names are kept as written. A new field whose value OmniFocus may rewrite needs the same treatment, or every write of it fails verification.
 - `src/types.ts` derives each result type from the runtime function that produces it.
 
 ## Commands and MCP tools

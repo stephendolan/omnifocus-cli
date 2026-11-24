@@ -20,6 +20,24 @@ export interface FakePerspective {
 }
 
 const ROOT = Symbol('root');
+
+/**
+ * Rewrites a note on the way in. Live OmniFocus does not keep CR or CRLF line
+ * endings, Unicode line separators, control characters, a byte order mark, or
+ * whitespace at either end of a note, and keeps names as written. What it
+ * stores in their place was not observed, so this is one plausible rewriting,
+ * not a record of the real one: tests against it show that a rewritten note is
+ * accepted, not that OmniFocus rewrites notes this way.
+ */
+function storedNote(note: string): string {
+  const lineBreak = (code: number) => code === 0x2028 || code === 0x2029 || code === 13;
+  const dropped = (code: number) => code === 0xfeff || (code < 32 && code !== 9 && code !== 10);
+  return Array.from(note.split('\r\n').join('\n'))
+    .map((character) => (lineBreak(character.charCodeAt(0)) ? '\n' : character))
+    .filter((character) => !dropped(character.charCodeAt(0)))
+    .join('')
+    .trim();
+}
 /** Passed as a task's position to create it outside any container, as a project's root task is. */
 export const DETACHED = Symbol('detached');
 
@@ -140,7 +158,7 @@ export function fakeDatabase() {
     };
     static byIdentifier = (id: string) =>
       allTasks().find((task) => task.id.primaryKey === id) ?? null;
-    note = '';
+    _note = '';
     flagged = false;
     estimatedMinutes: number | null = null;
     deferDate: Date | null = null;
@@ -167,6 +185,12 @@ export function fakeDatabase() {
       const self = strict(this);
       if (position !== DETACHED) moveTasks([self], position ?? at('ending', ROOT));
       return self;
+    }
+    get note() {
+      return this._note;
+    }
+    set note(value: string) {
+      this._note = storedNote(value);
     }
     get parent() {
       return this._parent;
