@@ -140,9 +140,67 @@ describe('built CLI against a fake database (mock executable, no Apple events)',
     expect((await cli('folder', 'create', 'Seeded folder')).json).toMatchObject({
       alreadyExisted: true,
     });
-    expect((await cli('task', 'delete', 'Seeded inbox task')).exitCode).toBe(0);
-    expect((await cli('project', 'delete', 'Seeded project')).exitCode).toBe(0);
-    expect((await cli('tag', 'delete', 'Seeded tag')).exitCode).toBe(0);
+    expect((await cli('task', 'delete', 'Seeded inbox task')).json).toMatchObject({
+      message: 'Task deleted successfully',
+      name: 'Seeded inbox task',
+    });
+    expect((await cli('project', 'delete', 'Seeded project')).json).toMatchObject({
+      message: 'Project deleted successfully',
+      name: 'Seeded project',
+    });
+    expect((await cli('tag', 'delete', 'Seeded tag')).json).toMatchObject({
+      message: 'Tag deleted successfully',
+      name: 'Seeded tag',
+    });
+    expect((await cli('folder', 'create', 'Scratch')).json).toMatchObject({
+      alreadyExisted: false,
+    });
+  });
+
+  it('rejects option values it used to ignore', async () => {
+    // Each case names the failure it must hit, so none can pass for another reason.
+    for (const [args, expected] of [
+      [['project', 'list', '--status', 'paused'], { name: 'cli_error', detail: 'status: ' }],
+      [['tag', 'list', '--sort', 'recent'], { name: 'cli_error', detail: 'sortBy: ' }],
+      [['tag', 'list', '--unused-days', 'many'], { name: 'cli_error', detail: 'unusedDays: ' }],
+      [['tag', 'list', '--unused-days', ''], { name: 'cli_error', detail: 'unusedDays: ' }],
+      [
+        ['task', 'update', 'Seeded task', '--name', '', '--flag'],
+        { name: 'cli_error', detail: 'name: ' },
+      ],
+      [
+        ['task', 'update', 'Seeded task', '--estimate', '2.5x'],
+        { name: 'cli_error', detail: 'estimatedMinutes: ' },
+      ],
+      [
+        ['task', 'update', 'Seeded task', '--estimate', ''],
+        { name: 'cli_error', detail: 'estimatedMinutes: ' },
+      ],
+      [['task', 'list', '--tag', ''], { name: 'cli_error', detail: 'tag: ' }],
+      [['task', 'list', '--project', ''], { name: 'cli_error', detail: 'project: ' }],
+      [
+        ['task', 'list', '--tag', 'No such tag'],
+        { code: 'not_found', detail: 'Tag not found: No such tag' },
+      ],
+      [
+        ['project', 'list', '--folder', 'No such folder'],
+        { code: 'not_found', detail: 'Folder not found: No such folder' },
+      ],
+      [
+        ['task', 'delete', 'Seeded project'],
+        { code: 'invalid', detail: 'Seeded project is a project; delete it as a project' },
+      ],
+      [
+        ['task', 'update', 'Seeded project', '--complete'],
+        { code: 'invalid', detail: 'Seeded project is a project; complete or drop it' },
+      ],
+    ] as const) {
+      const result = await cli(...args);
+      expect(result.exitCode).toBe(1);
+      const { detail, ...fields } = expected;
+      expect(result.json.error).toMatchObject({ ...fields, changes: 'none' });
+      expect(result.json.error.detail).toContain(detail);
+    }
   });
 
   it('exits unsuccessfully with a typed error', async () => {

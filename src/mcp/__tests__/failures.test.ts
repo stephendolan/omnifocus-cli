@@ -193,6 +193,23 @@ describe('MCP tool failures', () => {
     ]);
   });
 
+  it('reports which object a delete removed and refuses an ambiguous name', async () => {
+    const { call, Task } = await connect();
+    const first = new Task('Duplicate');
+    const second = new Task('Duplicate');
+    const ambiguous = await call('delete_task', { idOrName: 'Duplicate' });
+    expect(ambiguous.isError).toBe(true);
+    expect(ambiguous.body.error).toMatchObject({ code: 'ambiguous', changes: 'none' });
+    expect(await call('delete_task', { idOrName: first.id.primaryKey })).toEqual({
+      isError: false,
+      body: { deleted: true, id: first.id.primaryKey, name: 'Duplicate' },
+    });
+    expect(await call('get_task', { idOrName: 'Duplicate' })).toMatchObject({
+      isError: false,
+      body: { id: second.id.primaryKey },
+    });
+  });
+
   it('logs the tool and outcome of a failure without its arguments or detail', async () => {
     const { call, lines } = await connect();
     await call('get_task', { idOrName: 'Secret plan' });

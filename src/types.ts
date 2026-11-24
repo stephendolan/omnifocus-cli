@@ -15,6 +15,7 @@ export type Project = ReturnType<typeof omni.serializeProject>;
 export type Tag = ReturnType<typeof omni.serializeTag>;
 export type Folder = omni.SerializedFolder;
 export type CreateFolderResult = ReturnType<typeof omni.createFolder>;
+export type Deleted = ReturnType<typeof omni.deleteVerified>;
 export type Perspective = ReturnType<typeof omni.listPerspectives>[number];
 export type PerspectiveRulesResult = ReturnType<typeof omni.getPerspectiveRules>;
 export type TaskStats = ReturnType<typeof omni.getTaskStats>;

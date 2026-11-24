@@ -10,6 +10,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # A tag that names another version, or a commit that never reached main,
+      # must not publish.
+      - name: Check that the tag matches the package version
+        run: test "v$(jq -r .version package.json)" = "$GITHUB_REF_NAME"
+      - name: Check that the tagged commit is on main
+        run: git merge-base --is-ancestor HEAD origin/main
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -18,6 +27,7 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun run lint
+      - run: bun run format:check
       - run: bun run build
       - run: bun test
 

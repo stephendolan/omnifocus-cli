@@ -463,30 +463,29 @@ describe('write verification and restoration', () => {
   });
 
   it('deletes a created object whose remaining writes fail, and says so when it cannot', async () => {
-    const { of, Tag, context } = fakeOmniFocus();
+    const { of, Tag, Task, context } = fakeOmniFocus();
     new Tag('Real');
     await expect(of.createTask({ name: 'Task', tags: ['Missing'] })).rejects.toThrow(
       'Tag not found: Missing'
     );
     expect(context.flattenedTasks).toEqual([]);
 
-    const move = context.moveTasks;
-    let moves = 0;
-    context.moveTasks = (...args: Parameters<typeof move>) => {
-      if (++moves === 1) throw new Error('Move refused');
-      move(...args);
+    const addTag = Task.prototype.addTag;
+    Task.prototype.addTag = () => {
+      throw new Error('Tag refused');
     };
-    await expect(of.createTask({ name: 'Task', project: null, tags: ['Real'] })).rejects.toThrow(
-      'Move refused'
-    );
-    expect(context.flattenedTasks).toEqual([]);
+    try {
+      await expect(of.createTask({ name: 'Task', tags: ['Real'] })).rejects.toThrow('Tag refused');
+      expect(context.flattenedTasks).toEqual([]);
 
-    moves = 0;
-    context.deleteObject = () => {};
-    const error = await failure(of.createTask({ name: 'Stuck', project: null }));
-    expect(error.code).toBe('partial_write');
-    expect(error.message).toBe(
-      'Move refused; created task cleanup failed: Created task still exists'
-    );
+      context.deleteObject = () => {};
+      const error = await failure(of.createTask({ name: 'Stuck', tags: ['Real'] }));
+      expect(error.code).toBe('partial_write');
+      expect(error.message).toBe(
+        'Tag refused; created task cleanup failed: Created task still exists'
+      );
+    } finally {
+      Task.prototype.addTag = addTag;
+    }
   });
 });

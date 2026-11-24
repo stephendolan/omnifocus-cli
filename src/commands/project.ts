@@ -21,7 +21,7 @@ export function createProjectCommand(): Command {
         const filters: ProjectFilters = {
           includeDropped: options.dropped,
           ...(options.folder !== undefined && { folder: options.folder }),
-          ...(options.status && { status: options.status }),
+          ...(options.status !== undefined && { status: options.status }),
         };
         const projects = await of.listProjects(filters);
         outputJson(projects);
@@ -79,13 +79,13 @@ export function createProjectCommand(): Command {
           ...(options.singleActionList !== undefined && {
             singleActionList: options.singleActionList,
           }),
-          ...(options.name && { name: options.name }),
+          ...(options.name !== undefined && { name: options.name }),
           ...(options.note !== undefined && { note: options.note }),
           ...(options.folder !== undefined && { folder: options.folder }),
           ...(options.tag && { tags: options.tag }),
           ...(options.sequential && { sequential: true }),
           ...(options.parallel && { sequential: false }),
-          ...(options.status && { status: options.status }),
+          ...(options.status !== undefined && { status: options.status }),
         };
         const project = await of.updateProject(idOrName, updates);
         outputJson(project);
@@ -99,8 +99,8 @@ export function createProjectCommand(): Command {
     .action(
       withErrorHandling(async (idOrName) => {
         const of = new OmniFocus();
-        await of.deleteProject(idOrName);
-        outputJson({ message: 'Project deleted successfully' });
+        const { id, name } = await of.deleteProject(idOrName);
+        outputJson({ message: 'Project deleted successfully', id, name });
       })
     );
 

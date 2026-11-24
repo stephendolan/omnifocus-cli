@@ -128,8 +128,8 @@ export function invoke<A, R>(operation: (args: A) => R, args: A, deadline: numbe
   }
 }
 
-export function fail(code: OmniErrorCode, message: string): never {
-  throw Object.assign(new Error(message), { code });
+export function fail(code: OmniErrorCode, message: string, changes?: 'unknown'): never {
+  throw Object.assign(new Error(message), changes ? { code, changes } : { code });
 }
 
 export function messageOf(error: unknown): string {
@@ -170,54 +170,102 @@ export function sortedIds(list: DatabaseObject[]): string {
     .join(',');
 }
 
+/**
+ * Resolves a reference that is an ID or an exact name. A name shared by more
+ * than one object is rejected rather than settled by database order, and the
+ * error lists candidates' IDs so the caller can choose. Current objects come
+ * first and the list is capped, because a repeating task can share its name
+ * with thousands of finished occurrences.
+ */
 export function resolveUnique<T extends { id: ObjectIdentifier; name: string }>(
   collection: T[],
   reference: string,
-  kind: string
+  kind: string,
+  describe: (item: T) => string,
+  isCurrent: (item: T) => boolean
 ): T {
   const byId = collection.find((item) => item.id.primaryKey === reference);
   if (byId) return byId;
   const matches = collection.filter((item) => item.name === reference);
   if (matches.length > 1) {
-    fail('ambiguous', `Multiple ${kind} matches: ${reference}. Use an ID.`);
+    const ordered = matches.filter(isCurrent).concat(matches.filter((item) => !isCurrent(item)));
+    const shown = ordered.slice(0, 10).map((item) => `${item.id.primaryKey} (${describe(item)})`);
+    const rest = ordered.length - shown.length;
+    fail(
+      'ambiguous',
+      `Multiple ${kind} matches: ${reference}. Use an ID: ${shown.join(', ')}` +
+        (rest > 0 ? `, and ${rest} more` : '')
+    );
   }
   if (matches.length === 0) fail('not_found', `${kind} not found: ${reference}`);
   return matches[0];
 }
 
 export function resolveFolder(reference: string): Folder {
-  return resolveUnique(flattenedFolders, reference, 'Folder');
+  return resolveUnique(
+    flattenedFolders,
+    reference,
+    'Folder',
+    (folder) => (folder.parent ? `in ${folder.parent.name}` : 'top level'),
+    (folder) => folder.effectiveActive
+  );
 }
 
 export function resolveProject(reference: string): Project {
-  return resolveUnique(flattenedProjects, reference, 'Project');
+  return resolveUnique(
+    flattenedProjects,
+    reference,
+    'Project',
+    (project) => projectStatusName(project.status),
+    projectIsRemaining
+  );
 }
 
-export function findTask(idOrName: string): Task {
-  for (const task of flattenedTasks) {
-    if (task.id.primaryKey === idOrName || task.name === idOrName) return task;
-  }
-  return fail('not_found', `Task not found: ${idOrName}`);
+export function resolveTask(reference: string): Task {
+  return resolveUnique(
+    flattenedTasks,
+    reference,
+    'Task',
+    (task) => {
+      const state = task.completed ? 'completed' : task.dropDate ? 'dropped' : 'remaining';
+      return isProjectRoot(task) ? `project, ${state}` : state;
+    },
+    (task) => !task.completed && !task.dropDate
+  );
 }
 
-export function findProject(idOrName: string): Project {
-  for (const project of flattenedProjects) {
-    if (project.id.primaryKey === idOrName || project.name === idOrName) return project;
-  }
-  return fail('not_found', `Project not found: ${idOrName}`);
-}
-
-export function findFolder(idOrName: string): Folder {
-  for (const folder of flattenedFolders) {
-    if (folder.id.primaryKey === idOrName || folder.name === idOrName) return folder;
-  }
-  return fail('not_found', `Folder not found: ${idOrName}`);
+/** A project's root task: the task OmniFocus keeps for the project itself. */
+export function isProjectRoot(task: Task): boolean {
+  const project = task.containingProject;
+  return !!project && sameObject(task, project.task);
 }
 
 export function tagPath(tag: Tag): string {
   const parts = [tag.name];
   for (let current = tag.parent; current; current = current.parent) parts.unshift(current.name);
   return parts.join('/');
+}
+
+/** Every tag a filter reference names: by ID, by path, or by a name several tags may share. */
+export function tagsMatching(reference: string): Tag[] {
+  const matches = flattenedTags.filter(
+    (tag) => tag.id.primaryKey === reference || tag.name === reference || tagPath(tag) === reference
+  );
+  if (matches.length === 0) fail('not_found', `Tag not found: ${reference}`);
+  return matches;
+}
+
+/** Every folder a filter reference names: by ID, or by a name several folders may share. */
+export function foldersMatching(reference: string): Folder[] {
+  const matches = flattenedFolders.filter(
+    (folder) => folder.id.primaryKey === reference || folder.name === reference
+  );
+  if (matches.length === 0) fail('not_found', `Folder not found: ${reference}`);
+  return matches;
+}
+
+export function uniqueObjects<T extends DatabaseObject>(list: T[]): T[] {
+  return list.filter((item, index) => indexOfObject(list, item) === index);
 }
 
 export function findTag(idOrName: string): Tag {
@@ -574,16 +622,20 @@ export function restoreTaskPlacement(task: Task, parent: Task | null, next: Task
 export function taskProjectWrite(task: Task, project: Project | null): ReversibleWrite {
   const originalParent = task.parent;
   const originalNext = nextSibling(task);
+  // Moving a task to the container it is already at the top of would send it to the end.
+  const alreadyThere = project
+    ? !!originalParent && sameObject(originalParent, project.task)
+    : task.inInbox;
   return {
     field: 'project',
     apply() {
-      moveTasks([task], project ? project.ending : inbox.ending);
+      if (!alreadyThere) moveTasks([task], project ? project.ending : inbox.ending);
     },
     verify() {
       return sameObject(task.containingProject, project);
     },
     undo() {
-      restoreTaskPlacement(task, originalParent, originalNext);
+      if (!alreadyThere) restoreTaskPlacement(task, originalParent, originalNext);
     },
     undone() {
       return sameObject(task.parent, originalParent) && sameObject(nextSibling(task), originalNext);
@@ -644,7 +696,7 @@ export function taskDropWrite(task: Task, dropped: boolean): CheckedWrite {
 
 export function applyTaskChanges(task: Task, changes: TaskChanges): void {
   // Every reference resolves before the first write.
-  const requestedTags = changes.tags?.map(findTag);
+  const requestedTags = changes.tags && uniqueObjects(changes.tags.map(findTag));
   if (changes.completed === true && task.repetitionRule) {
     fail(
       'invalid',
@@ -778,7 +830,7 @@ export function tagParentWrite(tag: Tag, parent: Tag | null): ReversibleWrite {
 
 export function applyProjectChanges(project: Project, changes: ProjectChanges): void {
   // Every reference resolves before the first write.
-  const requestedTags = changes.tags?.map(findTag);
+  const requestedTags = changes.tags && uniqueObjects(changes.tags.map(findTag));
   const folder =
     changes.folder === undefined
       ? undefined
@@ -899,29 +951,46 @@ export function finishCreated<T extends DatabaseObject>(
   }
 }
 
+/** Deletes an object, checks that it is gone, and reports which object that was. */
+export function deleteVerified(
+  object: DatabaseObject & { name: string },
+  all: () => DatabaseObject[],
+  kind: string
+) {
+  const id = object.id.primaryKey;
+  const name = object.name;
+  deleteObject(object);
+  if (all().some((item) => item.id.primaryKey === id)) {
+    fail('verification_failed', `${kind} still exists after deletion: ${id}`, 'unknown');
+  }
+  return { deleted: true, id, name };
+}
+
 // Task operations
 
 export function listTasks(args: {
   includeCompleted?: boolean;
   includeDropped?: boolean;
   flagged?: boolean;
-  project?: string | null;
+  project?: string;
   tag?: string;
 }) {
   const project = args.project ? resolveProject(args.project) : null;
+  const tagFilter = args.tag ? tagsMatching(args.tag) : null;
   const results = [];
   for (const task of project ? project.flattenedTasks : flattenedTasks) {
     if (!args.includeCompleted && task.completed) continue;
     if (!args.includeDropped && !task.effectiveActive) continue;
-    if (args.flagged && (!task.flagged || task.taskStatus !== Task.Status.Available)) continue;
-    if (args.tag && !task.tags.some((tag) => tag.name === args.tag)) continue;
+    // Next, DueSoon, and Overdue are all available; only Blocked is not.
+    if (args.flagged && (!task.flagged || task.taskStatus === Task.Status.Blocked)) continue;
+    if (tagFilter && !task.tags.some((tag) => indexOfObject(tagFilter, tag) !== -1)) continue;
     results.push(serializeTask(task));
   }
   return results;
 }
 
 export function getTask(args: { idOrName: string }) {
-  return serializeTask(findTask(args.idOrName));
+  return serializeTask(resolveTask(args.idOrName));
 }
 
 export function createTask(args: TaskChanges & { name: string }) {
@@ -940,13 +1009,32 @@ export function createTask(args: TaskChanges & { name: string }) {
 }
 
 export function updateTask(args: { idOrName: string; changes: TaskChanges }) {
-  const task = findTask(args.idOrName);
+  const task = resolveTask(args.idOrName);
+  const placement =
+    args.changes.project !== undefined ||
+    args.changes.before !== undefined ||
+    args.changes.after !== undefined;
+  if (isProjectRoot(task)) {
+    if (placement) {
+      fail('invalid', `${task.name} is a project; a task update cannot move or reorder it`);
+    }
+    if (args.changes.completed !== undefined || args.changes.dropped !== undefined) {
+      fail(
+        'invalid',
+        `${task.name} is a project; complete or drop it with a project update, not a task update`
+      );
+    }
+  }
   applyTaskChanges(task, args.changes);
   return serializeTask(task);
 }
 
-export function deleteTask(args: { idOrName: string }): void {
-  deleteObject(findTask(args.idOrName));
+export function deleteTask(args: { idOrName: string }) {
+  const task = resolveTask(args.idOrName);
+  if (isProjectRoot(task)) {
+    fail('invalid', `${task.name} is a project; delete it as a project, not as a task`);
+  }
+  return deleteVerified(task, () => flattenedTasks, 'Task');
 }
 
 export function searchTasks(args: { query: string }) {
@@ -973,13 +1061,23 @@ export function listInboxTasks() {
   return results;
 }
 
+export function countInboxTasks(): number {
+  let count = 0;
+  inbox.apply((task) => {
+    if (!task.completed && task.effectiveActive) count++;
+    return null;
+  });
+  return count;
+}
+
 // Project operations
 
 export function listProjects(args: {
   includeDropped?: boolean;
   status?: ProjectStatusName;
-  folder?: string | null;
+  folder?: string;
 }) {
+  const folderFilter = args.folder ? foldersMatching(args.folder) : null;
   const results = [];
   for (const project of flattenedProjects) {
     if (args.status) {
@@ -987,14 +1085,17 @@ export function listProjects(args: {
     } else if (!args.includeDropped && !projectIsRemaining(project)) {
       continue;
     }
-    if (args.folder && project.parentFolder?.name !== args.folder) continue;
+    if (folderFilter) {
+      const folder = project.parentFolder;
+      if (!folder || indexOfObject(folderFilter, folder) === -1) continue;
+    }
     results.push(serializeProject(project));
   }
   return results;
 }
 
 export function getProject(args: { idOrName: string }) {
-  return serializeProject(findProject(args.idOrName));
+  return serializeProject(resolveProject(args.idOrName));
 }
 
 export function createProject(args: ProjectChanges & { name: string }) {
@@ -1012,13 +1113,13 @@ export function createProject(args: ProjectChanges & { name: string }) {
 }
 
 export function updateProject(args: { idOrName: string; changes: ProjectChanges }) {
-  const project = findProject(args.idOrName);
+  const project = resolveProject(args.idOrName);
   applyProjectChanges(project, args.changes);
   return serializeProject(project);
 }
 
-export function deleteProject(args: { idOrName: string }): void {
-  deleteObject(findProject(args.idOrName));
+export function deleteProject(args: { idOrName: string }) {
+  return deleteVerified(resolveProject(args.idOrName), () => flattenedProjects, 'Project');
 }
 
 // Tag operations
@@ -1056,8 +1157,8 @@ export function updateTag(args: { idOrName: string; changes: TagChanges }) {
   return serializeTag(tag, false);
 }
 
-export function deleteTag(args: { idOrName: string }): void {
-  deleteObject(findTag(args.idOrName));
+export function deleteTag(args: { idOrName: string }) {
+  return deleteVerified(findTag(args.idOrName), () => flattenedTags, 'Tag');
 }
 
 // Folder operations
@@ -1070,7 +1171,7 @@ export function listFolders(args: { includeDropped?: boolean }) {
 }
 
 export function getFolder(args: { idOrName: string; includeDropped?: boolean }) {
-  return serializeFolder(findFolder(args.idOrName), Boolean(args.includeDropped));
+  return serializeFolder(resolveFolder(args.idOrName), Boolean(args.includeDropped));
 }
 
 export function createFolder(args: { name: string }) {
@@ -1079,12 +1180,12 @@ export function createFolder(args: { name: string }) {
   return { ...serializeFolder(folder, false), alreadyExisted: existing !== null };
 }
 
-export function deleteFolder(args: { idOrName: string }): void {
+export function deleteFolder(args: { idOrName: string }) {
   const folder = resolveFolder(args.idOrName);
   if (folder.projects.length || folder.folders.length) {
     fail('invalid', 'Folder must be empty to delete');
   }
-  deleteObject(folder);
+  return deleteVerified(folder, () => flattenedFolders, 'Folder');
 }
 
 // Perspective operations

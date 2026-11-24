@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { outputJson } from '../lib/output.js';
-import { withErrorHandling } from '../lib/command-utils.js';
+import { parseNumber, withErrorHandling } from '../lib/command-utils.js';
 import { OmniFocus } from '../lib/omnifocus.js';
 import { parseDateTime } from '../lib/dates.js';
 
@@ -40,7 +40,7 @@ export function createInboxCommand(): Command {
     .option('-D, --defer <date>', 'Set defer date')
     .option('-P, --planned <date>', 'Set planned date')
     .option('-f, --flagged', 'Flag the task')
-    .option('-e, --estimate <minutes>', 'Estimated time in minutes', parseInt)
+    .option('-e, --estimate <minutes>', 'Estimated time in minutes', parseNumber)
     .action(
       withErrorHandling(async (name, options) => {
         const of = new OmniFocus();
@@ -48,9 +48,9 @@ export function createInboxCommand(): Command {
           name,
           note: options.note,
           tags: options.tag,
-          due: options.due ? parseDateTime(options.due) : undefined,
-          defer: options.defer ? parseDateTime(options.defer) : undefined,
-          planned: options.planned ? parseDateTime(options.planned) : undefined,
+          due: options.due ? parseDateTime(options.due) : options.due,
+          defer: options.defer ? parseDateTime(options.defer) : options.defer,
+          planned: options.planned ? parseDateTime(options.planned) : options.planned,
           flagged: options.flagged,
           estimatedMinutes: options.estimate,
         });

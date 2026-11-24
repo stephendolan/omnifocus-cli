@@ -1,13 +1,17 @@
 import { z } from 'zod';
 import type { OmniFocus } from '../lib/omnifocus.js';
 import {
-  taskCreate,
-  taskUpdate,
+  folderCreate,
+  folderFilters,
   projectCreate,
+  projectFilters,
   projectMutation,
   tagCreate,
+  tagListOptions,
   tagUpdate,
-  projectStatus,
+  taskCreate,
+  taskFilters,
+  taskUpdate,
 } from '../lib/mutations.js';
 import { perspectiveRulesSchema } from '../lib/perspective-rules.js';
 
@@ -41,20 +45,14 @@ export const TOOLS: ToolDefinition[] = [
     name: 'list_tasks',
     description: 'List tasks with optional filtering',
     readOnly: true,
-    inputSchema: z.strictObject({
-      includeCompleted: z.boolean().optional().describe('Include completed tasks'),
-      includeDropped: z.boolean().optional().describe('Include dropped tasks'),
-      flagged: z.boolean().optional().describe('Only show flagged tasks'),
-      project: z.string().optional().describe('Filter by project name'),
-      tag: z.string().optional().describe('Filter by tag name'),
-    }),
+    inputSchema: taskFilters,
     run: (of, filters) => of.listTasks(filters),
   }),
   tool({
     name: 'get_task',
-    description: 'Get a specific task by ID or name',
+    description: 'Get a specific task by ID or unique name',
     readOnly: true,
-    inputSchema: reference('Task ID or name'),
+    inputSchema: reference('Task ID or unique name'),
     run: (of, { idOrName }) => of.getTask(idOrName),
   }),
   tool({
@@ -76,11 +74,8 @@ export const TOOLS: ToolDefinition[] = [
     name: 'delete_task',
     description: 'Delete a task',
     readOnly: false,
-    inputSchema: reference('Task ID or name'),
-    run: async (of, { idOrName }) => {
-      await of.deleteTask(idOrName);
-      return { deleted: true };
-    },
+    inputSchema: reference('Task ID or unique name'),
+    run: (of, { idOrName }) => of.deleteTask(idOrName),
   }),
   tool({
     name: 'search_tasks',
@@ -114,18 +109,14 @@ export const TOOLS: ToolDefinition[] = [
     name: 'list_projects',
     description: 'List projects with optional filtering',
     readOnly: true,
-    inputSchema: z.strictObject({
-      includeDropped: z.boolean().optional().describe('Include dropped projects'),
-      status: projectStatus.optional().describe('Filter by status'),
-      folder: z.string().optional().describe('Filter by folder name'),
-    }),
+    inputSchema: projectFilters,
     run: (of, filters) => of.listProjects(filters),
   }),
   tool({
     name: 'get_project',
-    description: 'Get a specific project by ID or name',
+    description: 'Get a specific project by ID or unique name',
     readOnly: true,
-    inputSchema: reference('Project ID or name'),
+    inputSchema: reference('Project ID or unique name'),
     run: (of, { idOrName }) => of.getProject(idOrName),
   }),
   tool({
@@ -147,11 +138,8 @@ export const TOOLS: ToolDefinition[] = [
     name: 'delete_project',
     description: 'Delete a project',
     readOnly: false,
-    inputSchema: reference('Project ID or name'),
-    run: async (of, { idOrName }) => {
-      await of.deleteProject(idOrName);
-      return { deleted: true };
-    },
+    inputSchema: reference('Project ID or unique name'),
+    run: (of, { idOrName }) => of.deleteProject(idOrName),
   }),
   tool({
     name: 'get_project_stats',
@@ -199,11 +187,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'list_tags',
     description: 'List all tags with optional filtering and sorting',
     readOnly: true,
-    inputSchema: z.strictObject({
-      unusedDays: z.number().optional().describe('Only show tags unused for this many days'),
-      sortBy: z.enum(['name', 'usage', 'activity']).optional().describe('Sort order'),
-      activeOnly: z.boolean().optional().describe('Only count active tasks'),
-    }),
+    inputSchema: tagListOptions,
     run: (of, options) => of.listTags(options),
   }),
   tool({
@@ -232,10 +216,7 @@ export const TOOLS: ToolDefinition[] = [
     description: 'Delete a tag',
     readOnly: false,
     inputSchema: reference('Tag ID, name, or path'),
-    run: async (of, { idOrName }) => {
-      await of.deleteTag(idOrName);
-      return { deleted: true };
-    },
+    run: (of, { idOrName }) => of.deleteTag(idOrName),
   }),
   tool({
     name: 'get_tag_stats',
@@ -248,17 +229,15 @@ export const TOOLS: ToolDefinition[] = [
     name: 'list_folders',
     description: 'List all folders',
     readOnly: true,
-    inputSchema: z.strictObject({
-      includeDropped: z.boolean().optional().describe('Include dropped folders'),
-    }),
+    inputSchema: folderFilters,
     run: (of, filters) => of.listFolders(filters),
   }),
   tool({
     name: 'get_folder',
-    description: 'Get a specific folder by ID or name',
+    description: 'Get a specific folder by ID or unique name',
     readOnly: true,
     inputSchema: z.strictObject({
-      idOrName: z.string().describe('Folder ID or name'),
+      idOrName: z.string().describe('Folder ID or unique name'),
       includeDropped: z.boolean().optional().describe('Include dropped children'),
     }),
     run: (of, { idOrName, includeDropped }) => of.getFolder(idOrName, { includeDropped }),
@@ -267,19 +246,14 @@ export const TOOLS: ToolDefinition[] = [
     name: 'create_folder',
     description: 'Create a top-level folder, or return an existing folder with the same name',
     readOnly: false,
-    inputSchema: z.strictObject({
-      name: z.string().describe('Top-level folder name (exact match)'),
-    }),
+    inputSchema: folderCreate,
     run: (of, { name }) => of.createFolder(name),
   }),
   tool({
     name: 'delete_folder',
     description: 'Delete an empty folder',
     readOnly: false,
-    inputSchema: z.strictObject({ idOrName: z.string() }),
-    run: async (of, { idOrName }) => {
-      await of.deleteFolder(idOrName);
-      return { deleted: true };
-    },
+    inputSchema: reference('Folder ID or unique name'),
+    run: (of, { idOrName }) => of.deleteFolder(idOrName),
   }),
 ];
