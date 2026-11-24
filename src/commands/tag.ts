@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { outputJson } from '../lib/output.js';
-import { withErrorHandling } from '../lib/command-utils.js';
+import { parseNumber, withErrorHandling } from '../lib/command-utils.js';
 import { OmniFocus } from '../lib/omnifocus.js';
 import type { UpdateTagOptions } from '../types.js';
 
@@ -12,7 +12,7 @@ export function createTagCommand(): Command {
     .command('list')
     .alias('ls')
     .description('List tags with usage information')
-    .option('-u, --unused-days <days>', 'Show tags unused for N days', Number)
+    .option('-u, --unused-days <days>', 'Show tags unused for N days', parseNumber)
     .option('-s, --sort <field>', 'Sort by: name, usage, activity (default: name)', 'name')
     .option('-a, --active-only', 'Only count active (incomplete) tasks')
     .action(

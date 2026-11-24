@@ -33,7 +33,7 @@ describe('references to tasks, projects, and folders', () => {
       const error = await failure(attempt());
       expect(error).toMatchObject({ code: 'ambiguous', statusCode: 400, changes: 'none' });
       expect(error.message).toBe(
-        `Multiple Task matches: Weekly review. Use an ID: ${idOf(finished)} (completed), ${idOf(dropped)} (dropped), ${idOf(current)} (remaining)`
+        `Multiple Task matches: Weekly review. Use an ID: ${idOf(current)} (remaining), ${idOf(finished)} (completed), ${idOf(dropped)} (dropped)`
       );
     }
     expect(names(project.tasks)).toEqual(['Weekly review', 'Weekly review', 'Weekly review']);
@@ -56,12 +56,27 @@ describe('references to tasks, projects, and folders', () => {
     const task = new Task('Taxes');
     const error = await failure(of.deleteTask('Taxes'));
     expect(error.code).toBe('ambiguous');
-    expect(error.message).toContain(`${idOf(project)} (remaining)`);
-    expect(error.message).toContain(`${idOf(task)} (remaining)`);
+    expect(error.message).toBe(
+      `Multiple Task matches: Taxes. Use an ID: ${idOf(project)} (project, remaining), ${idOf(task)} (remaining)`
+    );
     expect(await of.getProject('Taxes')).toMatchObject({ id: idOf(project) });
   });
 
-  it('will not delete, move, or reorder a project through a task call', async () => {
+  it('names the remaining task first and caps the candidates it lists', async () => {
+    const { of, Project, Task } = fakeOmniFocus();
+    const project = new Project('Home');
+    for (let occurrence = 0; occurrence < 12; occurrence++) {
+      new Task('Daily review', project).markComplete(null);
+    }
+    const current = new Task('Daily review', project);
+    const error = await failure(of.getTask('Daily review'));
+    const listed = error.message.split('Use an ID: ')[1].split(', ');
+    expect(listed[0]).toBe(`${idOf(current)} (remaining)`);
+    expect(listed.slice(1, 10).every((entry) => entry.endsWith('(completed)'))).toBe(true);
+    expect(listed.slice(10)).toEqual(['and 3 more']);
+  });
+
+  it('will not delete, move, reorder, complete, or drop a project through a task call', async () => {
     const { of, Project, Task, context } = fakeOmniFocus();
     const project = new Project('Renovation');
     const other = new Project('Other');
@@ -81,6 +96,21 @@ describe('references to tasks, projects, and folders', () => {
         message: 'Renovation is a project; a task update cannot move or reorder it',
       });
     }
+    for (const changes of [
+      { completed: true },
+      { dropped: true },
+      { name: 'X', completed: false },
+    ]) {
+      expect(await failure(of.updateTask('Renovation', changes))).toMatchObject({
+        code: 'invalid',
+        changes: 'none',
+        message:
+          'Renovation is a project; complete or drop it with a project update, not a task update',
+      });
+    }
+    expect(project.status).toBe(Project.Status.Active);
+    expect(project.task.completed).toBe(false);
+    expect(project.name).toBe('Renovation');
     expect(names(context.flattenedProjects)).toEqual(['Renovation', 'Other']);
     expect(names(project.tasks)).toEqual(['Paint']);
 
@@ -190,6 +220,12 @@ describe('filters', () => {
   it('rejects filter values no schema allows before contacting OmniFocus', async () => {
     const { of, execute } = fakeOmniFocus();
     for (const attempt of [
+      // An empty or null filter would read as "no filter" and return everything.
+      () => of.listTasks({ project: '' }),
+      () => of.listTasks({ project: null as never }),
+      () => of.listTasks({ tag: '' }),
+      () => of.listProjects({ folder: '' }),
+      () => of.listProjects({ folder: null as never }),
       () => of.listProjects({ status: 'paused' as never }),
       () => of.listTags({ sortBy: 'recent' as never }),
       () => of.listTags({ unusedDays: Number.NaN }),
@@ -227,17 +263,39 @@ describe('write arguments', () => {
     expect(task.name).toBe('Task');
   });
 
-  it('rejects dates that do not exist and accepts ones that do', () => {
+  it('rejects dates and times that do not exist and accepts ones that do', () => {
     for (const input of [
       '2026-02-30',
       '2027-02-29',
       '2026-13-01',
       '2026-00-10',
       '2026-2-30',
+      '2026/02/30',
+      '20260230',
+      '2026/00/10',
       '2026-04-31T10:00:00Z',
+      '2026-03-01T24:30',
+      '2026-12-01T23:59:60',
+      '2026-12-01T10:61',
+      'someday',
     ]) {
       expect(() => parseDateTime(input)).toThrow(`Invalid date: ${input}`);
     }
+    for (const input of [
+      '2026-12-01 10:30',
+      '2026-12-01T10:30:00+02:00',
+      '2026-12-01T23:59:59.999Z',
+      'Dec 1 2026',
+      '12/25/2026',
+      '2026-12',
+      '  2026-12-01',
+      '2026-1-5',
+      '2026/12/01',
+      '20261201',
+    ]) {
+      expect(new Date(parseDateTime(input)).getFullYear()).toBe(2026);
+    }
+    expect(parseDateTime('2026-12-01T10:30:00+02:00')).toBe('2026-12-01T08:30:00.000Z');
     expect(parseDateTime('2028-02-29T12:00:00Z')).toBe('2028-02-29T12:00:00.000Z');
     expect(parseDateTime('2026-12-31T23:59:59.123Z')).toBe('2026-12-31T23:59:59.123Z');
     expect(new Date(parseDateTime('2026-04-30')).getDate()).toBe(30);
@@ -269,6 +327,24 @@ describe('write arguments', () => {
     const [early] = ['Early', 'Late'].map((name) => new Task(name));
     await of.updateTask(idOf(early), { project: null, note: 'still first' });
     expect(names(context.inbox)).toEqual(['Early', 'Late']);
+
+    const child = new Task('Child', early);
+    expect(await of.updateTask(idOf(child), { project: null })).toMatchObject({
+      project: null,
+      parentTaskId: null,
+    });
+    expect(names(context.inbox)).toEqual(['Early', 'Late', 'Child']);
+  });
+
+  it('leaves an unmoved task where it is when a later write in the same update fails', async () => {
+    const { of, Project, Task } = fakeOmniFocus();
+    const project = new Project('Sequence');
+    const [first] = ['First', 'Second'].map((name) => new Task(name, project));
+    Object.defineProperty(first, 'flagged', { get: () => false, set: () => {} });
+    await expect(
+      of.updateTask(idOf(first), { name: 'Renamed', project: idOf(project), flagged: true })
+    ).rejects.toThrow('Write verification failed: flagged');
+    expect(names(project.tasks)).toEqual(['First', 'Second']);
   });
 
   it('reports a deletion OmniFocus did not carry out', async () => {

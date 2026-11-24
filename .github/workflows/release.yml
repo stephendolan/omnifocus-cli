@@ -18,7 +18,7 @@ jobs:
       - name: Check that the tag matches the package version
         run: test "v$(jq -r .version package.json)" = "$GITHUB_REF_NAME"
       - name: Check that the tagged commit is on main
-        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+        run: git merge-base --is-ancestor HEAD origin/main
 
       - uses: oven-sh/setup-bun@v2
         with:

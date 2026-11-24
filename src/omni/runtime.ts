@@ -173,22 +173,28 @@ export function sortedIds(list: DatabaseObject[]): string {
 /**
  * Resolves a reference that is an ID or an exact name. A name shared by more
  * than one object is rejected rather than settled by database order, and the
- * error lists each candidate's ID so the caller can choose.
+ * error lists candidates' IDs so the caller can choose. Current objects come
+ * first and the list is capped, because a repeating task can share its name
+ * with thousands of finished occurrences.
  */
 export function resolveUnique<T extends { id: ObjectIdentifier; name: string }>(
   collection: T[],
   reference: string,
   kind: string,
-  describe: (item: T) => string
+  describe: (item: T) => string,
+  isCurrent: (item: T) => boolean
 ): T {
   const byId = collection.find((item) => item.id.primaryKey === reference);
   if (byId) return byId;
   const matches = collection.filter((item) => item.name === reference);
   if (matches.length > 1) {
-    const candidates = matches.map((item) => `${item.id.primaryKey} (${describe(item)})`);
+    const ordered = matches.filter(isCurrent).concat(matches.filter((item) => !isCurrent(item)));
+    const shown = ordered.slice(0, 10).map((item) => `${item.id.primaryKey} (${describe(item)})`);
+    const rest = ordered.length - shown.length;
     fail(
       'ambiguous',
-      `Multiple ${kind} matches: ${reference}. Use an ID: ${candidates.join(', ')}`
+      `Multiple ${kind} matches: ${reference}. Use an ID: ${shown.join(', ')}` +
+        (rest > 0 ? `, and ${rest} more` : '')
     );
   }
   if (matches.length === 0) fail('not_found', `${kind} not found: ${reference}`);
@@ -196,20 +202,35 @@ export function resolveUnique<T extends { id: ObjectIdentifier; name: string }>(
 }
 
 export function resolveFolder(reference: string): Folder {
-  return resolveUnique(flattenedFolders, reference, 'Folder', (folder) =>
-    folder.parent ? `in ${folder.parent.name}` : 'top level'
+  return resolveUnique(
+    flattenedFolders,
+    reference,
+    'Folder',
+    (folder) => (folder.parent ? `in ${folder.parent.name}` : 'top level'),
+    (folder) => folder.effectiveActive
   );
 }
 
 export function resolveProject(reference: string): Project {
-  return resolveUnique(flattenedProjects, reference, 'Project', (project) =>
-    projectStatusName(project.status)
+  return resolveUnique(
+    flattenedProjects,
+    reference,
+    'Project',
+    (project) => projectStatusName(project.status),
+    projectIsRemaining
   );
 }
 
 export function resolveTask(reference: string): Task {
-  return resolveUnique(flattenedTasks, reference, 'Task', (task) =>
-    task.completed ? 'completed' : task.dropDate ? 'dropped' : 'remaining'
+  return resolveUnique(
+    flattenedTasks,
+    reference,
+    'Task',
+    (task) => {
+      const state = task.completed ? 'completed' : task.dropDate ? 'dropped' : 'remaining';
+      return isProjectRoot(task) ? `project, ${state}` : state;
+    },
+    (task) => !task.completed && !task.dropDate
   );
 }
 
@@ -951,7 +972,7 @@ export function listTasks(args: {
   includeCompleted?: boolean;
   includeDropped?: boolean;
   flagged?: boolean;
-  project?: string | null;
+  project?: string;
   tag?: string;
 }) {
   const project = args.project ? resolveProject(args.project) : null;
@@ -993,8 +1014,16 @@ export function updateTask(args: { idOrName: string; changes: TaskChanges }) {
     args.changes.project !== undefined ||
     args.changes.before !== undefined ||
     args.changes.after !== undefined;
-  if (placement && isProjectRoot(task)) {
-    fail('invalid', `${task.name} is a project; a task update cannot move or reorder it`);
+  if (isProjectRoot(task)) {
+    if (placement) {
+      fail('invalid', `${task.name} is a project; a task update cannot move or reorder it`);
+    }
+    if (args.changes.completed !== undefined || args.changes.dropped !== undefined) {
+      fail(
+        'invalid',
+        `${task.name} is a project; complete or drop it with a project update, not a task update`
+      );
+    }
   }
   applyTaskChanges(task, args.changes);
   return serializeTask(task);
@@ -1046,7 +1075,7 @@ export function countInboxTasks(): number {
 export function listProjects(args: {
   includeDropped?: boolean;
   status?: ProjectStatusName;
-  folder?: string | null;
+  folder?: string;
 }) {
   const folderFilter = args.folder ? foldersMatching(args.folder) : null;
   const results = [];

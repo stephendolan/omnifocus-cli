@@ -158,24 +158,49 @@ describe('built CLI against a fake database (mock executable, no Apple events)',
   });
 
   it('rejects option values it used to ignore', async () => {
-    for (const args of [
-      ['project', 'list', '--status', 'paused'],
-      ['tag', 'list', '--sort', 'recent'],
-      ['tag', 'list', '--unused-days', 'many'],
-      ['task', 'update', 'Seeded task', '--name', '', '--flag'],
-      ['task', 'update', 'Seeded task', '--estimate', '2.5x'],
-      ['task', 'list', '--tag', 'No such tag'],
-      ['task', 'delete', 'Seeded project'],
-    ]) {
+    // Each case names the failure it must hit, so none can pass for another reason.
+    for (const [args, expected] of [
+      [['project', 'list', '--status', 'paused'], { name: 'cli_error', detail: 'status: ' }],
+      [['tag', 'list', '--sort', 'recent'], { name: 'cli_error', detail: 'sortBy: ' }],
+      [['tag', 'list', '--unused-days', 'many'], { name: 'cli_error', detail: 'unusedDays: ' }],
+      [['tag', 'list', '--unused-days', ''], { name: 'cli_error', detail: 'unusedDays: ' }],
+      [
+        ['task', 'update', 'Seeded task', '--name', '', '--flag'],
+        { name: 'cli_error', detail: 'name: ' },
+      ],
+      [
+        ['task', 'update', 'Seeded task', '--estimate', '2.5x'],
+        { name: 'cli_error', detail: 'estimatedMinutes: ' },
+      ],
+      [
+        ['task', 'update', 'Seeded task', '--estimate', ''],
+        { name: 'cli_error', detail: 'estimatedMinutes: ' },
+      ],
+      [['task', 'list', '--tag', ''], { name: 'cli_error', detail: 'tag: ' }],
+      [['task', 'list', '--project', ''], { name: 'cli_error', detail: 'project: ' }],
+      [
+        ['task', 'list', '--tag', 'No such tag'],
+        { code: 'not_found', detail: 'Tag not found: No such tag' },
+      ],
+      [
+        ['project', 'list', '--folder', 'No such folder'],
+        { code: 'not_found', detail: 'Folder not found: No such folder' },
+      ],
+      [
+        ['task', 'delete', 'Seeded project'],
+        { code: 'invalid', detail: 'Seeded project is a project; delete it as a project' },
+      ],
+      [
+        ['task', 'update', 'Seeded project', '--complete'],
+        { code: 'invalid', detail: 'Seeded project is a project; complete or drop it' },
+      ],
+    ] as const) {
       const result = await cli(...args);
       expect(result.exitCode).toBe(1);
-      expect(result.json.error.changes).toBe('none');
-      expect([400, 404]).toContain(result.json.error.statusCode);
+      const { detail, ...fields } = expected;
+      expect(result.json.error).toMatchObject({ ...fields, changes: 'none' });
+      expect(result.json.error.detail).toContain(detail);
     }
-    expect((await cli('task', 'view', 'Seeded task')).json).toMatchObject({
-      name: 'Seeded task',
-      flagged: false,
-    });
   });
 
   it('exits unsuccessfully with a typed error', async () => {

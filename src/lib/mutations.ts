@@ -104,21 +104,23 @@ export const folderCreate = z.strictObject({
 });
 
 // Read arguments. The MCP tools and the library parse the same schemas, so a
-// filter the CLI passes is checked exactly as a tool argument is.
+// filter the CLI passes is checked exactly as a tool argument is. A filter is
+// a non-empty string: null and "" would otherwise read as "no filter" and
+// return everything.
 export const taskFilters = z.strictObject({
   includeCompleted: z.boolean().optional().describe('Include completed tasks'),
   includeDropped: z.boolean().optional().describe('Include dropped tasks'),
   flagged: z
     .boolean()
     .optional()
-    .describe('Only flagged tasks that are available: not blocked, deferred, or on hold'),
-  project: z.string().nullable().optional().describe('Filter by project ID or unique name'),
-  tag: z.string().optional().describe('Filter by tag ID, name, or path'),
+    .describe('Only flagged tasks, leaving out those OmniFocus reports as blocked'),
+  project: name.optional().describe('Filter by project ID or unique name'),
+  tag: name.optional().describe('Filter by tag ID, name, or path'),
 });
 export const projectFilters = z.strictObject({
   includeDropped: z.boolean().optional().describe('Include dropped projects'),
   status: projectStatus.optional().describe('Filter by status'),
-  folder: z.string().nullable().optional().describe('Filter by folder ID or name'),
+  folder: name.optional().describe('Filter by folder ID or name'),
 });
 export const tagListOptions = z.strictObject({
   unusedDays: z

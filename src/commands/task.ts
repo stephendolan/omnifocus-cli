@@ -1,6 +1,6 @@
 import { Command, Option } from 'commander';
 import { outputJson } from '../lib/output.js';
-import { withErrorHandling } from '../lib/command-utils.js';
+import { parseNumber, withErrorHandling } from '../lib/command-utils.js';
 import { OmniFocus } from '../lib/omnifocus.js';
 import { parseDateTime } from '../lib/dates.js';
 import type { TaskFilters, UpdateTaskOptions } from '../types.js';
@@ -24,7 +24,7 @@ export function createTaskCommand(): Command {
           includeCompleted: options.completed,
           ...(options.flagged && { flagged: true }),
           ...(options.project !== undefined && { project: options.project }),
-          ...(options.tag && { tag: options.tag }),
+          ...(options.tag !== undefined && { tag: options.tag }),
         };
         const tasks = await of.listTasks(filters);
         outputJson(tasks);
@@ -41,7 +41,7 @@ export function createTaskCommand(): Command {
     .option('-D, --defer <date>', 'Set defer date')
     .option('-P, --planned <date>', 'Set planned date')
     .option('-f, --flagged', 'Flag the task')
-    .option('-e, --estimate <minutes>', 'Estimated time in minutes', Number)
+    .option('-e, --estimate <minutes>', 'Estimated time in minutes', parseNumber)
     .action(
       withErrorHandling(async (name, options) => {
         const of = new OmniFocus();
@@ -50,9 +50,9 @@ export function createTaskCommand(): Command {
           note: options.note,
           project: options.project,
           tags: options.tag,
-          due: options.due ? parseDateTime(options.due) : undefined,
-          defer: options.defer ? parseDateTime(options.defer) : undefined,
-          planned: options.planned ? parseDateTime(options.planned) : undefined,
+          due: options.due ? parseDateTime(options.due) : options.due,
+          defer: options.defer ? parseDateTime(options.defer) : options.defer,
+          planned: options.planned ? parseDateTime(options.planned) : options.planned,
           flagged: options.flagged,
           estimatedMinutes: options.estimate,
         });
@@ -96,7 +96,7 @@ export function createTaskCommand(): Command {
     .option('-C, --incomplete', 'Mark as incomplete')
     .addOption(new Option('--drop', 'Mark as dropped').conflicts('undrop'))
     .option('--undrop', 'Restore a dropped task to active')
-    .option('-e, --estimate <minutes>', 'Estimated time in minutes', Number)
+    .option('-e, --estimate <minutes>', 'Estimated time in minutes', parseNumber)
     .action(
       withErrorHandling(async (idOrName, options) => {
         const of = new OmniFocus();

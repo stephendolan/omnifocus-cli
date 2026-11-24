@@ -29,7 +29,7 @@ of task update "Buy groceries" --complete   # Mark done
 
 ```bash
 of task list                        # List active tasks
-of task list --flagged              # Flagged tasks that are available
+of task list --flagged              # Flagged tasks that are not blocked
 of task list --project "Work"       # Filter by project ID or unique name
 of task list --tag "urgent"         # Filter by tag ID, name, or path
 of task list --completed            # Include completed
@@ -270,25 +270,29 @@ of task list --flagged | jq '.[] | {name, due}'  # Specific fields
 ## References and filters
 
 A task, project, or folder is named by its ID or by its exact name. A name that
-more than one object of that kind carries is rejected with `ambiguous`, and the
-error lists each candidate's ID with its state, so the next call can use the ID.
-Finished tasks count: a repeating task shares its name with every completed
-occurrence. A tag is named by ID, by a unique name, or by a `Parent/Child` path.
+more than one object of that kind carries is rejected with `ambiguous`. The
+error lists up to ten candidates by ID and state, remaining ones first, so the
+next call can use an ID. Finished tasks count: a repeating task shares its name
+with every completed occurrence. A tag is named by ID, by a unique name, or by a
+`Parent/Child` path.
 
 OmniFocus keeps a root task for every project, with the project's ID and name,
-and `list_tasks` returns it alongside ordinary tasks. A task update can change
-that root task's fields, such as its flag or due date. It cannot move, reorder,
-or delete it: those are project operations.
+and `list_tasks` returns it alongside ordinary tasks. An `ambiguous` error
+labels it `project`. A task update can change that root task's fields, such as
+its name, flag, or due date. It cannot move, reorder, complete, drop, or delete
+it: those are project operations.
 
 `list_tasks.project` takes a project ID or unique name. `list_tasks.tag` takes a
 tag ID, name, or path, and `list_projects.folder` takes a folder ID or name;
-both include every tag or folder that carries the name. A filter that matches no
-project, tag, or folder returns `not_found`, so an empty list always means that
-nothing matched an object that exists.
+both include every tag or folder that carries the name. A filter is a non-empty
+string: `null` and `""` are rejected rather than read as no filter. A filter
+that matches no project, tag, or folder returns `not_found`, so an empty list
+always means that nothing matched an object that exists.
 
-`list_tasks.flagged` returns flagged tasks that are available, including the
-ones OmniFocus marks next, due soon, or overdue. It leaves out blocked tasks:
-those deferred, waiting on an earlier task, or on hold.
+`list_tasks.flagged` returns flagged tasks, including the ones OmniFocus marks
+next, due soon, or overdue. It leaves out tasks OmniFocus reports as blocked,
+such as one waiting on an earlier task in a sequential project. With
+`includeCompleted` or `includeDropped` it also returns finished flagged tasks.
 
 ## Writes
 
@@ -299,9 +303,9 @@ readback fails, the fields already written are restored and the restoration is
 checked. Completing and dropping a task run last and are not undone. Each error
 states what the request left behind; see [Errors](#errors).
 
-Names must not be empty, `estimatedMinutes` is a whole number, and a date must
-exist: `2026-02-30` is rejected rather than rolled into March. A tag named twice
-in one request is assigned once.
+Names must not be empty, `estimatedMinutes` is a whole number, and a date and
+time must exist: `2026-02-30` and `24:30` are rejected rather than rolled into
+the next month or day. A tag named twice in one request is assigned once.
 
 `update_project.folder` accepts a folder ID or unique exact name; `null` or `""`
 moves to the library root. `update_tag.parent` accepts a tag ID, unique name or
