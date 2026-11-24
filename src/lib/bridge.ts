@@ -26,8 +26,10 @@ export function composeOmniScript<A>(
   args: A,
   deadline: number
 ): string {
+  // A deadline that is not a number would compare false forever and switch the guard off.
+  if (!Number.isFinite(deadline)) throw new TypeError(`Invalid script deadline: ${deadline}`);
   const encodedArgs = JSON.stringify(JSON.stringify(args ?? null));
-  return `${RUNTIME_SOURCE}\n(${String(runtime.invoke)})(${String(operation)}, JSON.parse(${encodedArgs}), ${Number(deadline)});`;
+  return `${RUNTIME_SOURCE}\n(${String(runtime.invoke)})(${String(operation)}, JSON.parse(${encodedArgs}), ${deadline});`;
 }
 
 /** Wraps an Omni Automation script in the JXA that hands it to OmniFocus. */

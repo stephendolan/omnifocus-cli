@@ -891,6 +891,10 @@ export function finishCreated<T extends DatabaseObject>(
         `${messageOf(error)}; created ${kind} cleanup failed: ${messageOf(cleanupError)}`
       );
     }
+    // The object is gone, so nothing is left partial even if undoing its fields had failed.
+    if ((error as { code?: unknown } | null)?.code === 'partial_write') {
+      fail('verification_failed', `${messageOf(error)}; the new ${kind} was deleted`);
+    }
     throw unchanged(error);
   }
 }

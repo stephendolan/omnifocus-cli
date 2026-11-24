@@ -283,7 +283,8 @@ call returns the same JSON as its text content, with `isError: true`.
 }
 ```
 
-`changes` says what the failed request did to the database:
+`changes` says what the failed request did to the database, and decides what to
+do next. `code` says why it failed.
 
 | `changes` | Meaning                                                   | What to do                             |
 | --------- | --------------------------------------------------------- | -------------------------------------- |
@@ -304,7 +305,7 @@ A failed read always reports `none`.
 | `bridge_error`        | 502    | `osascript` failed or returned unreadable output.                     | `unknown`            |
 | `timeout`             | 504    | OmniFocus did not answer within 30 seconds.                           | `unknown`            |
 | `expired`             | 504    | OmniFocus reached the request after its caller stopped waiting.       | `none`               |
-| `unresponsive`        | 503    | MCP only: an earlier call timed out, so this one was not sent.        | `none`               |
+| `unresponsive`        | 503    | MCP only: OmniFocus has not answered since a call timed out.          | `none`               |
 | `busy`                | 503    | MCP only: 16 operations are already running.                          | `none`               |
 
 Arguments rejected before OmniFocus is contacted return `name: "cli_error"` with
@@ -312,16 +313,16 @@ status 400 and `changes: "none"`. Arguments that fail an MCP tool's input schema
 are rejected by the MCP layer with a plain-text message and `isError: true`.
 Consent failures are described under [Automation consent](#automation-consent).
 
-A request that times out cannot take effect later. Each script carries the moment
-its caller stops waiting and does nothing if OmniFocus reaches it afterwards, so
-a call left queued behind a blocked OmniFocus is harmless when the queue drains.
-A timed-out write reports `unknown` only because OmniFocus may have started it
-just before that moment.
+A request that OmniFocus has not started by the time its caller stops waiting
+never starts. Each script carries that moment and does nothing if OmniFocus
+reaches it afterwards, so a call left queued behind a blocked OmniFocus is
+harmless when the queue drains. A request OmniFocus had already started runs to
+completion, which is why a timed-out write reports `unknown`.
 
 After a timeout an MCP server stops sending calls to OmniFocus for 30 seconds
-and answers `unresponsive` instead, then lets one call through to find out
-whether OmniFocus answers again. `get_perspective_tasks` waits 60 seconds
-rather than 30.
+and answers `unresponsive` instead. It then admits one call at a time until
+OmniFocus answers one, which reopens it; another timeout starts another 30
+seconds. `get_perspective_tasks` waits 60 seconds rather than 30.
 
 ## Troubleshooting
 

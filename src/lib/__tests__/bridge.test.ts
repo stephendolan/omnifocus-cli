@@ -75,6 +75,12 @@ describe('composeOmniScript', () => {
     expect(sandbox.ran).toBe(true);
   });
 
+  it('refuses to compose a script whose deadline is not a finite number', () => {
+    for (const deadline of [Number.NaN, Number.POSITIVE_INFINITY, undefined as unknown as number]) {
+      expect(() => compose(echo, {}, deadline)).toThrow('Invalid script deadline');
+    }
+  });
+
   it('reports a name OmniFocus does not provide as a script error', () => {
     // A stand-in for runtime code that calls an Omni Automation function that does not exist.
     const error = decodeFailure(

@@ -28,7 +28,13 @@ function jsonResponse(data: unknown) {
 export function createMcpServer(options: McpServerOptions = {}): McpServer {
   const mode = options.mode ?? 'full';
   const of = options.omniFocus ?? new OmniFocus();
-  const log = options.log ?? (() => {});
+  const log = (message: string) => {
+    try {
+      options.log?.(message);
+    } catch {
+      // A log that cannot be written must not turn a tool result into a failure.
+    }
+  };
   const execute = options.execute ?? createExecutionGate({ log });
   const available = TOOLS.filter((tool) => isAvailable(tool, mode));
 

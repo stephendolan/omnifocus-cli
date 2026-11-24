@@ -83,17 +83,26 @@ settles. The limit applies across all requests to that listener.
 Each listener admits OmniFocus operations through one gate. A call that times
 out leaves its Apple event queued inside OmniFocus, where it holds a thread
 until OmniFocus reaches it. After a timeout the gate therefore answers
-`unresponsive` (503) for 30 seconds without sending anything, then lets a single
-call through; an answer reopens the gate and another timeout holds it again.
-Restarting a listener clears its gate. Every script also carries the moment its
-caller stops waiting and does nothing when OmniFocus reaches it later, so a
-queued call cannot change the database after its caller was told it timed out.
+`unresponsive` (503) for 30 seconds without sending anything, then admits one
+call at a time. An answer from OmniFocus, including an error such as
+`not_found`, reopens the gate. A timeout holds it for another 30 seconds. A
+failure that never reached OmniFocus, such as rejected arguments or a consent
+error, leaves it admitting one call at a time. A timeout from a call sent before
+the gate last held or reopened is ignored. Restarting a listener clears its
+gate. One slow call that times out holds every caller for those 30 seconds.
+
+Every script also carries the moment its caller stops waiting and does nothing
+when OmniFocus reaches it later, so a queued call cannot change the database
+after its caller was told it timed out. A script OmniFocus had already started
+runs to completion.
 
 Listeners log to stderr with a UTC timestamp: one startup line naming the CLI
-version, endpoint, and mode; one line per failed tool call (`tool`, `error`,
+version, endpoint, and mode; `bridge=first-answer` once, when OmniFocus answers
+the first call after startup; one line per failed tool call (`tool`, `error`,
 `status`, `changes`, `ms`); and `bridge=unresponsive` / `bridge=responding` when
 the gate holds and reopens. Lines never include arguments or error detail.
-Successful calls are not logged.
+Successful calls are otherwise not logged. The startup and first-answer lines
+confirm a restart on a listener that the operator cannot authenticate to.
 
 ## Mac Mini public deployment example
 

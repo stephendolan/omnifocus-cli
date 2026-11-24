@@ -123,6 +123,58 @@ describe('MCP tool failures', () => {
     }
   });
 
+  it('gives each script a deadline one timeout from now, longer for a perspective view', async () => {
+    const { of, execute } = fakeOmniFocus();
+    // The deadline is the last argument of the composed script: the only 13-digit number before its end.
+    const lastDeadline = () => {
+      const [script] = execute.mock.calls[execute.mock.calls.length - 1];
+      const matches = [...script.matchAll(/, (\d{13})\);/g)];
+      expect(matches.length).toBe(1);
+      return Number(matches[0][1]);
+    };
+    for (const [run, timeoutMs] of [
+      [() => of.listInboxTasks(), 30_000],
+      [() => of.createFolder('Scratch'), 30_000],
+      [() => of.getPerspectiveTasks('Inbox'), 60_000],
+    ] as const) {
+      const before = Date.now();
+      await run();
+      const after = Date.now();
+      expect(lastDeadline()).toBeGreaterThanOrEqual(before + timeoutMs);
+      expect(lastDeadline()).toBeLessThanOrEqual(after + timeoutMs);
+    }
+  });
+
+  it('says a failed create left nothing behind once the new object is deleted', async () => {
+    const { call, Tag, Task, context } = await connect();
+    new Tag('Real');
+    // Assigning the tag fails, and so does undoing it. On an existing task that is a partial
+    // write; on a task the create then deletes, nothing is left.
+    const clearTags = Task.prototype.clearTags;
+    let clears = 0;
+    Task.prototype.clearTags = function (this: InstanceType<typeof Task>) {
+      if (++clears === 2) throw new Error('Clear refused');
+      clearTags.call(this);
+    };
+    Task.prototype.addTag = () => {
+      throw new Error('Tag refused');
+    };
+    const result = await call('create_task', { name: 'New', tags: ['Real'] });
+    expect(result).toEqual({
+      isError: true,
+      body: {
+        error: {
+          name: 'omnifocus_error',
+          detail: 'Tag refused; restoration failed: tags: Clear refused; the new task was deleted',
+          statusCode: 500,
+          code: 'verification_failed',
+          changes: 'none',
+        },
+      },
+    });
+    expect(context.flattenedTasks).toEqual([]);
+  });
+
   it('stops sending calls to OmniFocus after a timeout', async () => {
     const { call, execute, lines } = await connect();
     execute.mockRejectedValue(new OmniFocusError('timeout', 'OmniFocus did not respond.'));
@@ -146,6 +198,7 @@ describe('MCP tool failures', () => {
     await call('get_task', { idOrName: 'Secret plan' });
     await call('list_inbox');
     expect(lines).toEqual([
+      'bridge=first-answer',
       expect.stringMatching(/^tool=get_task error=not_found status=404 changes=none ms=\d+$/),
     ]);
   });
